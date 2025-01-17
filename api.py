@@ -214,19 +214,19 @@ def slack_events():
                         except Exception as e:
                             logger.error(f"Error processing file attachment: {str(e)}")
                 
-                # Forward to process_message
+                # Forward to go
                 try:
-                    logger.info(f"Forwarding message to process_message - Thread: {thread_ts}")
-                    response = process_message(message_data)
+                    logger.info(f"Forwarding message to go - Thread: {thread_ts}")
+                    response = go(message_data)
                     
                     # Check if response is valid
                     if response.status_code != 200:
-                        logger.error(f"Error response from process_message: {response.status_code}")
+                        logger.error(f"Error response from go: {response.status_code}")
                         return make_response("", 200)  # Return 200 to Slack but log the error
                         
                     response_data = response.json
                     if not isinstance(response_data, dict):
-                        logger.error("Invalid response format from process_message")
+                        logger.error("Invalid response format from go")
                         return make_response("", 200)
                     
                     # Send new assistant messages to Slack
@@ -254,8 +254,8 @@ def slack_events():
         
     return make_response("", 200)
 
-@app.route("/process/message", methods=["POST"])
-def process_message(message_data=None):
+@app.route("/go", methods=["POST"])
+def go(message_data=None):
     """Process an incoming message from any source."""
     try:
         # Get message data from request if not provided

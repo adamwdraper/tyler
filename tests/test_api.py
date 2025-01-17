@@ -79,9 +79,9 @@ def mock_agent_registry():
         yield mock
 
 @pytest.fixture
-def mock_process_message():
-    """Mock process_message function"""
-    with patch('api.process_message') as mock:
+def mock_go():
+    """Mock go function"""
+    with patch('api.go') as mock:
         with app.app_context():
             mock.return_value = jsonify({
                 "thread": {"id": "test-thread-id"},
@@ -127,7 +127,7 @@ def test_slack_events_app_mention(client, mock_slack_signature, mock_router_agen
     # First call to thread_store.get returns None (new thread)
     mock_thread_store.get.side_effect = [
         None,  # First call when checking for existing thread
-        MagicMock(  # Second call in process_message
+        MagicMock(  # Second call in go
             spec=Thread,
             id="123.456",
             messages=[
@@ -174,7 +174,7 @@ def test_slack_events_app_mention(client, mock_slack_signature, mock_router_agen
         thread_ts="123.456"
     )
 
-def test_slack_events_with_file_attachment(client, mock_slack_signature, mock_slack_client, mock_requests, mock_router_agent, mock_process_message):
+def test_slack_events_with_file_attachment(client, mock_slack_signature, mock_slack_client, mock_requests, mock_router_agent, mock_go):
     """Test handling Slack events with file attachments"""
     event_data = {
         "type": "event_callback",
@@ -208,8 +208,8 @@ def test_slack_events_with_file_attachment(client, mock_slack_signature, mock_sl
         thread_ts="123.456"
     )
 
-def test_process_message_duplicate_detection(client, mock_thread_store):
-    """Test duplicate message detection in process_message"""
+def test_go_duplicate_detection(client, mock_thread_store):
+    """Test duplicate message detection in go"""
     # Create a mock thread with an existing message
     mock_thread = MagicMock(spec=Thread)
     mock_thread.messages = [
@@ -235,8 +235,8 @@ def test_process_message_duplicate_detection(client, mock_thread_store):
     assert response.json["new_messages"] == []
     mock_thread_store.get.assert_called_once_with("test-thread-id")
 
-def test_process_message_new_thread(client, mock_thread_store, mock_router_agent, mock_agent_registry):
-    """Test creating a new thread in process_message"""
+def test_go_new_thread(client, mock_thread_store, mock_router_agent, mock_agent_registry):
+    """Test creating a new thread in go"""
     # Mock thread store to return None (no existing thread)
     mock_thread_store.get.return_value = None
     
@@ -263,7 +263,7 @@ def test_process_message_new_thread(client, mock_thread_store, mock_router_agent
     mock_thread_store.get.assert_called_once_with("new-thread-id")
     mock_agent_registry.get_agent.assert_called_once_with("test_agent")
 
-def test_process_message_with_attachments(client, mock_thread_store, mock_router_agent, mock_agent_registry):
+def test_go_with_attachments(client, mock_thread_store, mock_router_agent, mock_agent_registry):
     """Test processing a message with attachments"""
     # Mock thread store to return None (no existing thread)
     mock_thread_store.get.return_value = None
@@ -296,7 +296,7 @@ def test_process_message_with_attachments(client, mock_thread_store, mock_router
     mock_thread_store.get.assert_called_once_with("new-thread-id")
     mock_agent_registry.get_agent.assert_called_once_with("test_agent")
 
-def test_process_message_invalid_request(client):
+def test_go_invalid_request(client):
     """Test processing a message with invalid request format"""
     response = client.post("/process/message", json={
         "invalid": "format"
@@ -305,7 +305,7 @@ def test_process_message_invalid_request(client):
     assert response.status_code == 400
     assert "Source must be an object with 'name' and 'thread_id' properties" in response.data.decode()
 
-def test_process_message_missing_fields(client):
+def test_go_missing_fields(client):
     """Test processing a message with missing required fields"""
     response = client.post("/process/message", json={
         "message": "test",
@@ -318,7 +318,7 @@ def test_process_message_missing_fields(client):
     assert response.status_code == 400
     assert "Source must be an object with 'name' and 'thread_id' properties" in response.data.decode()
 
-def test_process_message_error(client, mock_router_agent, mock_thread_store):
+def test_go_error(client, mock_router_agent, mock_thread_store):
     """Test processing a message where an error occurs"""
     mock_router_agent.route.side_effect = Exception("Processing error")
     mock_thread_store.get.return_value = None
