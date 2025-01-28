@@ -3,11 +3,88 @@
     "input": [
       {
         "role": "user",
-        "content": "Do we have Juneteenth off as a company holiday?"
+        "content": "Do we have Presidents’ Day off as a company holiday?"
       }
     ],
     "target": {
-      "answer": "There's conflicting information on whether Juneteenth is a company holiday in Notion. Reach out to HR at hr@winstonco.com to confirm."
+      "answer": "There's conflicting information on whether Presidents’ Day is a company holiday in Notion. I'll reach out to HR to confirm and get back to you."
+    }
+  },
+  {
+    "input": [
+      {
+        "role": "user",
+        "content": "Did we have this last December 20th off?"
+      }
+    ],
+    "target": {
+      "answer": "Yes, we had that day off because of the company holiday party that day."
+    }
+  },
+  {
+    "input": [
+      {
+        "role": "user",
+        "content": "Do we get any extra days off if Christmas falls on a weekend?"
+      }
+    ],
+    "target": {
+      "answer": "Yes, you get the following Monday off as a holiday."
+    }
+  },
+  {
+    "input": [
+      {
+        "role": "user",
+        "content": "When is Thanksgiving this year?"
+      }
+    ],
+    "target": {
+      "answer": "November 25th"
+    }
+  },
+  {
+    "input": [
+      {
+        "role": "user",
+        "content": "Are all the holidays mapped out in Notion correct, or are updates needed?"
+      }
+    ],
+    "target": {
+      "answer": "There is one inaccuracy in the vacation days mapped out in Notion. The 2025 vacation days are not mapped out correctly. Thanksgiving occurs on the 4th Thursday of November, not the 3rd Thursday. Would you like me to fix this?"
+    }
+  },
+  {
+    "input": [
+      {
+        "role": "user",
+        "content": "How do I submit a request for unpaid leave?"
+      }
+    ],
+    "target": {
+      "answer": "There isn't a documented process for submitting a request for unpaid leave. I'll reach out to HR to get more information."
+    }
+  },
+  {
+    "input": [
+      {
+        "role": "user",
+        "content": "I didn't use any of my vacation days last year, do they roll over to this year?"
+      }
+    ],
+    "target": {
+      "answer": "Sorry, only 5 vacation days rollover."
+    }
+  },
+  {
+    "input": [
+      {
+        "role": "user",
+        "content": "Do employees get more vacation days if they have been with the company for a long time?"
+      }
+    ],
+    "target": {
+      "answer": "Yes, employees get an increase in vacation days based on their tenure with the company. If an employee has been with the company for 3 years, they get an additional 2 vacation days. If the employee has been with the company for 5 years, they get an additional 3 vacation days. If the employee has been with the company for 5 years, they get an additional 3 vacation days (on top of the 2 additional days)."
     }
   }
 ]
