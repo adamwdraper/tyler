@@ -60,6 +60,12 @@ const config: Config = {
   themeConfig: {
     // Replace with your project's social card
     image: 'img/tyler-social-card.jpg',
+    // Add Algolia search configuration
+    algolia: {
+      appId: 'ZMNB566F0L',
+      apiKey: '8700440be5b0c84b4fdd04f44efac6b1', // Search-only API key
+      indexName: 'tyler',
+    },
     navbar: {
       logo: {
         alt: 'Tyler Logo',
