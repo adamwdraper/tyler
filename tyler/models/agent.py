@@ -485,9 +485,19 @@ class Agent(Model):
                         error_response, error_metrics = await self.step(thread)
                         if self.stream:
                             error_content = ""
+                            final_chunk = None
                             async for chunk in error_response:
+                                final_chunk = chunk
                                 if hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
                                     error_content += chunk.choices[0].delta.content
+                            
+                            # Add usage metrics from final chunk if available
+                            if final_chunk and hasattr(final_chunk, 'usage') and final_chunk.usage:
+                                error_metrics["usage"] = {
+                                    "completion_tokens": final_chunk.usage.completion_tokens,
+                                    "prompt_tokens": final_chunk.usage.prompt_tokens,
+                                    "total_tokens": final_chunk.usage.total_tokens
+                                }
                         else:
                             error_content = error_response.choices[0].message.content
                         

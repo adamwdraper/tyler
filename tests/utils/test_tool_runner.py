@@ -549,3 +549,38 @@ async def test_load_tool_module_all_imports_fail(tool_runner):
     with patch('importlib.import_module', side_effect=mock_import):
         loaded_tools = tool_runner.load_tool_module('test')
         assert len(loaded_tools) == 0 
+
+@pytest.mark.asyncio
+async def test_execute_tool_call_error_propagation(tool_runner):
+    """Test that execute_tool_call properly propagates errors from both sync and async tools"""
+    # Define tools that raise errors
+    def sync_error_tool():
+        raise ValueError("Sync tool error")
+        
+    async def async_error_tool():
+        await asyncio.sleep(0.1)
+        raise ValueError("Async tool error")
+    
+    # Register both tools
+    tool_runner.register_tool('sync_error_tool', sync_error_tool)
+    tool_runner.register_tool('async_error_tool', async_error_tool)
+    
+    # Test sync tool error
+    sync_tool_call = MagicMock()
+    sync_tool_call.id = 'sync_error_id'
+    sync_tool_call.function.name = 'sync_error_tool'
+    sync_tool_call.function.arguments = '{}'
+    
+    with pytest.raises(ValueError) as exc_info:
+        await tool_runner.execute_tool_call(sync_tool_call)
+    assert "Error executing tool 'sync_error_tool': Sync tool error" in str(exc_info.value)
+    
+    # Test async tool error
+    async_tool_call = MagicMock()
+    async_tool_call.id = 'async_error_id'
+    async_tool_call.function.name = 'async_error_tool'
+    async_tool_call.function.arguments = '{}'
+    
+    with pytest.raises(ValueError) as exc_info:
+        await tool_runner.execute_tool_call(async_tool_call)
+    assert "Error executing tool 'async_error_tool': Async tool error" in str(exc_info.value) 

@@ -89,6 +89,13 @@ async def fake_streaming_tool_calls_no_content():
     yield FakeChunk(choices=[FakeChoice(delta=FakeDelta(content=None, tool_calls=[tool_call]), finish_reason="tool_calls")], 
                     usage=FakeUsage(completion_tokens=5, prompt_tokens=15, total_tokens=20))
 
+# Fake streaming generator for error response
+async def fake_streaming_error_response():
+    # Error response
+    yield FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="I'm currently unable to help with that due to a technical issue. "), finish_reason="")])
+    yield FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="Is there anything else I can assist you with?"), finish_reason="stop")],
+                   usage=FakeUsage(completion_tokens=15, prompt_tokens=25, total_tokens=40))
+
 # Dummy object to simulate the weave call info
 class DummyCall:
     id = "dummy-id"
@@ -137,43 +144,51 @@ async def test_streaming_no_tool_calls(dummy_thread):
 
 @pytest.mark.asyncio
 async def test_streaming_with_tool_calls(dummy_thread):
+    """Test streaming with tool calls and error handling"""
     # Create an Agent with streaming enabled
     agent = Agent(stream=True, model_name="gpt-4o")
     
     # Create a mock for _get_completion that returns our fake streaming generator
     mock_get_completion = AsyncMock()
-    mock_get_completion.call = AsyncMock(return_value=(fake_streaming_with_tool_calls(), DummyCall()))
+    mock_get_completion.call.side_effect = [
+        (fake_streaming_with_tool_calls(), DummyCall()),  # First call with tool
+        (fake_streaming_error_response(), DummyCall())    # Second call for error message
+    ]
     
-    # Patch the _get_completion method
-    with patch.object(agent, '_get_completion', mock_get_completion):
+    # Patch the _get_completion method and tool runner
+    with patch.object(agent, '_get_completion', mock_get_completion), \
+         patch('tyler.models.agent.tool_runner') as mock_tool_runner:
+        # Mock tool execution to raise an error
+        mock_tool_runner.execute_tool_call = AsyncMock(side_effect=ValueError("Tool execution failed"))
+        mock_tool_runner.get_tool_attributes.return_value = None
+        
         # Call go
         thread, new_messages = await agent.go(dummy_thread)
-
-        # There should be an assistant message added
-        assistant_msgs = [msg for msg in thread.messages if msg.role == "assistant"]
-        assert len(assistant_msgs) == 1
-        assistant_msg = assistant_msgs[0]
-
-        # Verify that the combined content is as expected
-        expected_content = "Output before tool call. "
-        assert assistant_msg.content == expected_content
-
-        # Verify that the tool call was captured
-        tool_calls = assistant_msg.tool_calls
-        assert tool_calls is not None
-        assert isinstance(tool_calls, list)
-        assert len(tool_calls) == 1
-        call = tool_calls[0]
-        assert call["id"] == "tool_call_1"
-        assert call["type"] == "function"
-        assert call["function"]["name"] == "test_tool"
-        assert call["function"]["arguments"] == '{"arg": "value"}'
         
-        # Verify usage metrics in the assistant message
-        usage = assistant_msg.metrics.get("usage", {})
-        assert usage.get("completion_tokens") == 5
-        assert usage.get("prompt_tokens") == 15
-        assert usage.get("total_tokens") == 20 
+        # Verify we got the expected sequence of messages
+        assert len(new_messages) == 3  # Initial message, tool error, final error message
+        
+        # First message should have the tool call
+        assert new_messages[0].role == "assistant"
+        assert new_messages[0].content == "Output before tool call. "
+        assert new_messages[0].tool_calls is not None
+        assert len(new_messages[0].tool_calls) == 1
+        
+        # Second message should be the tool error
+        assert new_messages[1].role == "tool"
+        assert "Error executing tool" in new_messages[1].content
+        
+        # Third message should be the error response
+        assert new_messages[2].role == "assistant"
+        assert "I'm currently unable to help with that due to a technical issue" in new_messages[2].content
+        
+        # Verify metrics are present
+        for msg in new_messages:
+            if msg.role == "assistant":
+                assert "usage" in msg.metrics
+                assert "timing" in msg.metrics
+            if msg.role == "tool":
+                assert "timing" in msg.metrics
 
 @pytest.mark.asyncio
 async def test_streaming_continues_after_tool_calls(dummy_thread):
