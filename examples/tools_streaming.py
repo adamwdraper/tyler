@@ -1,22 +1,38 @@
 #!/usr/bin/env python3
 
+import os
+import logging
 from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+print("DEBUG: Environment check:")
+print(f"DEBUG: LOG_LEVEL from env: {os.getenv('LOG_LEVEL')}")
+print(f"DEBUG: Current working directory: {os.getcwd()}")
+
+# Configure logging before any other imports
+logging.basicConfig(
+    level=os.getenv('LOG_LEVEL', 'INFO'),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True  # Force reconfiguration of the root logger
+)
+
+# Set root logger level
+root_logger = logging.getLogger()
+root_logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
+
 from tyler.models.agent import Agent
 from tyler.models.thread import Thread
 from tyler.models.message import Message
 import asyncio
 import weave
-import os
-import logging
 import sys
 
 logger = logging.getLogger(__name__)
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+logger.debug("Starting tools_streaming.py with debug logging enabled")
+logger.debug(f"Current LOG_LEVEL: {os.getenv('LOG_LEVEL')}")
 
 try:
     if os.getenv("WANDB_API_KEY"):
@@ -25,65 +41,53 @@ try:
 except Exception as e:
     logger.warning(f"Failed to initialize weave tracing: {e}. Continuing without weave.")
 
-def custom_translator_implementation(text: str, target_language: str) -> str:
+def custom_weather_implementation(city: str) -> str:
     """
-    Implementation of a mock translator tool.
-    In a real application, this would use a translation API.
+    Implementation of a mock weather tool.
+    In a real application, this would retrieve live weather data.
     """
-    # This is a mock implementation
-    translations = {
-        "spanish": {
-            "hello": "hola",
-            "world": "mundo",
-            "how are you": "¿cómo estás?",
-            "good morning": "buenos días"
-        },
-        "french": {
-            "hello": "bonjour",
-            "world": "monde",
-            "how are you": "comment allez-vous?",
-            "good morning": "bonjour"
-        }
-    }
     
-    target_language = target_language.lower()
-    text = text.lower()
+    logger.debug(f"Weather tool called with city: {city}")
     
-    if target_language not in translations:
-        return f"Error: Unsupported target language '{target_language}'"
+    try:
+        if not isinstance(city, str):
+            logger.error(f"Invalid city type: {type(city)}")
+            raise ValueError(f"city must be a string, got {type(city)}")
         
-    if text in translations[target_language]:
-        return f"Translation: {translations[target_language][text]}"
-    else:
-        return f"Mock translation to {target_language}: [{text}]"
+        # Log the city string after any potential whitespace stripping
+        city = city.strip()
+        logger.debug(f"Processed city parameter: {city}")
+            
+        if city.lower() == "phoenix":
+            return "The weather in Phoenix is sunny, 95°F, with a light breeze."
+        else:
+            raise ValueError(f"Weather data for {city} is not available.")
+    except Exception as e:
+        logger.error(f"Error in weather tool: {str(e)}")
+        raise  # Re-raise the error to ensure it's handled as a tool error
 
-# Define custom translator tool
-custom_translator_tool = {
+# Define custom weather tool
+custom_weather_tool = {
     "definition": {
         "type": "function",
         "function": {
-            "name": "translate",
-            "description": "Translate text to another language",
+            "name": "get_weather",
+            "description": "Get current weather information for a given city",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "text": {
+                    "city": {
                         "type": "string",
-                        "description": "The text to translate"
-                    },
-                    "target_language": {
-                        "type": "string",
-                        "description": "The target language for translation",
-                        "enum": ["Spanish", "French"]
+                        "description": "Name of the city for which to fetch the weather"
                     }
                 },
-                "required": ["text", "target_language"]
+                "required": ["city"]
             }
         }
     },
-    "implementation": custom_translator_implementation,
+    "implementation": custom_weather_implementation,
     "attributes": {
-        "category": "language",
+        "category": "weather",
         "version": "1.0"
     }
 }
@@ -91,48 +95,40 @@ custom_translator_tool = {
 # Initialize the agent with streaming enabled
 agent = Agent(
     model_name="gpt-4o",
-    purpose="To help with translations and web searches",
+    purpose="To help with weather queries and web searches",
     tools=[
         "web",                     # Load the web tools module
-        custom_translator_tool,    # Add our translator tool
+        custom_weather_tool,         # Add our weather tool
     ],
     temperature=0.7,
     stream=True  # Enable streaming responses
 )
 
 async def main():
-    # Example conversation with translations and web searches using real streaming
+    # Example conversation with a question that can be answered without a tool, and one that requires the weather tool
     conversations = [
         "How do you say 'hello' in Spanish?",
-        "Now translate 'good morning' to French."
+        "What's the current weather in Phoenix?"
     ]
+
+    # Create a new thread for
+    thread = Thread()
 
     for user_input in conversations:
         print(f"\nUser: {user_input}")
 
-        # Create a new thread for each conversation
-        thread = Thread()
         message = Message(role="user", content=user_input)
         thread.add_message(message)
 
-        # Build completion parameters with streaming enabled
-        completion_params = {
-            "model": agent.model_name,
-            "messages": thread.get_messages_for_chat_completion(),
-            "temperature": agent.temperature,
-            "stream": True
-        }
-        if agent._processed_tools:
-            completion_params["tools"] = agent._processed_tools
+        # Process the thread using the agent's go() method so that it aggregates the response
+        thread, new_messages = await agent.go(thread)
 
-        # Get the streaming response directly from the agent
-        streaming_response, call = await agent._get_completion.call(agent, **completion_params)
-
-        print("\nAssistant (streaming): ", end='', flush=True)
-        async for chunk in streaming_response:
-            delta = chunk.choices[0].delta
-            if hasattr(delta, 'content') and delta.content is not None:
-                print(delta.content, end='', flush=True)
+        # Print the new messages aggregated by the agent
+        for msg in new_messages:
+            if msg.role == "assistant":
+                print(f"\nAssistant: {msg.content}")
+            elif msg.role == "tool":
+                print(f"\nTool ({msg.name}): {msg.content}")
         print("\n" + "-" * 50)
 
 if __name__ == "__main__":
