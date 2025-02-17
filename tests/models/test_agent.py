@@ -581,10 +581,10 @@ async def test_tool_execution_error(agent):
         mock_tool_runner.execute_tool_call = AsyncMock(side_effect=Exception("Tool error"))
         mock_tool_runner.get_tool_attributes.return_value = None
 
-        # Should not raise exception but handle it gracefully
+        # Should return True to indicate processing should stop after error
         should_break = await agent._process_tool_call(tool_call, thread, new_messages)
 
-        assert not should_break
+        assert should_break is True
         assert len(new_messages) == 1
         assert new_messages[0].role == "tool"
         assert new_messages[0].name == "test-tool"
@@ -956,6 +956,117 @@ async def test_go_with_tool_calls_no_content(agent, mock_thread_store, mock_prom
     assert final_msg.role == "assistant"
     assert final_msg.content == "Final response"
     assert final_msg.tool_calls is None
+
+@pytest.mark.asyncio
+async def test_go_stops_after_tool_error(agent, mock_thread_store, mock_prompt, mock_litellm):
+    """Test that go() stops processing after a tool error and returns an appropriate message"""
+    thread = Thread(id="test-conv", title="Test Thread")
+    mock_prompt.system_prompt.return_value = "Test system prompt"
+    thread.messages = []
+    thread.ensure_system_prompt("Test system prompt")
+    mock_thread_store.get.return_value = thread
+    agent._iteration_count = 0
+    
+    # First response with tool call
+    tool_response = ModelResponse(**{
+        "id": "test-id",
+        "choices": [{
+            "finish_reason": "tool_calls",
+            "index": 0,
+            "message": {
+                "content": "Let me check that for you",
+                "role": "assistant",
+                "tool_calls": [{
+                    "id": "test-call-id",
+                    "type": "function",
+                    "function": {
+                        "name": "test-tool",
+                        "arguments": '{"arg": "value"}'
+                    }
+                }]
+            }
+        }],
+        "model": "gpt-4",
+        "usage": {
+            "completion_tokens": 10,
+            "prompt_tokens": 20,
+            "total_tokens": 30
+        }
+    })
+    
+    # Final response that should be used after tool error
+    final_response = ModelResponse(**{
+        "id": "test-id-2",
+        "choices": [{
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+                "content": "I'm currently unable to help with that due to a technical issue. Is there anything else I can assist you with?",
+                "role": "assistant",
+                "tool_calls": None
+            }
+        }],
+        "model": "gpt-4",
+        "usage": {
+            "completion_tokens": 5,
+            "prompt_tokens": 25,
+            "total_tokens": 30
+        }
+    })
+    
+    # Mock the weave operation
+    mock_weave_call = MagicMock()
+    mock_weave_call.id = "test-weave-id"
+    mock_weave_call.ui_url = "https://weave.ui/test"
+    agent._get_completion.call.side_effect = [(tool_response, mock_weave_call), (final_response, mock_weave_call)]
+    
+    with patch('tyler.models.agent.tool_runner') as patched_tool_runner:
+        # Mock tool execution to raise an error
+        patched_tool_runner.execute_tool_call = AsyncMock(side_effect=Exception("Tool execution failed"))
+        patched_tool_runner.get_tool_attributes.return_value = None
+        
+        result_thread, new_messages = await agent.go("test-conv")
+    
+    # Verify we only got the initial messages and error handling
+    assert len(new_messages) == 3
+    assert new_messages[0].role == "assistant"
+    assert new_messages[0].content == "Let me check that for you"
+    assert new_messages[1].role == "tool"
+    assert "Error executing tool" in new_messages[1].content
+    assert new_messages[2].role == "assistant"
+    assert "I'm currently unable to help with that due to a technical issue" in new_messages[2].content
+    
+    # Verify that _get_completion was called exactly twice
+    assert agent._get_completion.call.call_count == 2
+    
+    # Verify the thread store was updated
+    mock_thread_store.save.assert_called_with(result_thread)
+
+@pytest.mark.asyncio
+async def test_process_tool_call_returns_true_on_error(agent):
+    """Test that _process_tool_call returns True when a tool errors to stop further processing"""
+    thread = Thread(id="test-thread")
+    new_messages = []
+    tool_call = {
+        "id": "test-id",
+        "type": "function",
+        "function": {
+            "name": "test-tool",
+            "arguments": "{}"
+        }
+    }
+
+    with patch('tyler.models.agent.tool_runner') as mock_tool_runner:
+        mock_tool_runner.execute_tool_call = AsyncMock(side_effect=Exception("Tool error"))
+        mock_tool_runner.get_tool_attributes.return_value = None
+
+        # Should return True to indicate processing should stop
+        should_break = await agent._process_tool_call(tool_call, thread, new_messages)
+
+        assert should_break is True
+        assert len(new_messages) == 1
+        assert new_messages[0].role == "tool"
+        assert "Error executing tool" in new_messages[0].content
 
 class AsyncMock(MagicMock):
     async def __call__(self, *args, **kwargs):

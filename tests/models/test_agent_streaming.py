@@ -565,9 +565,30 @@ async def test_streaming_tool_call_error_handling():
             self.current += 1
             return chunk
 
+    class MockStreamingErrorResponse:
+        def __init__(self):
+            self.chunks = [
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="I'm currently unable to help with that due to a technical issue. "), finish_reason="")]),
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="Is there anything else I can assist you with?"), finish_reason="stop")])
+            ]
+            self.current = 0
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            if self.current >= len(self.chunks):
+                raise StopAsyncIteration
+            chunk = self.chunks[self.current]
+            self.current += 1
+            return chunk
+
     # Mock _get_completion
     mock_get_completion = AsyncMock()
-    mock_get_completion.call = AsyncMock(return_value=(MockStreamingWithToolCall(), DummyCall()))
+    mock_get_completion.call = AsyncMock(side_effect=[
+        (MockStreamingWithToolCall(), DummyCall()),
+        (MockStreamingErrorResponse(), DummyCall())
+    ])
     
     # Patch the _get_completion method and tool runner
     with patch.object(agent, '_get_completion', mock_get_completion), \
@@ -579,11 +600,322 @@ async def test_streaming_tool_call_error_handling():
         thread, new_messages = await agent.go(thread)
 
         # Verify error handling
-        assert len(new_messages) == 2  # Initial response and error message
+        assert len(new_messages) == 3  # Initial response, error message, and final message
         assert new_messages[0].content == "Processing your request. "
         assert new_messages[1].role == "tool"
         assert "Error executing tool" in new_messages[1].content
+        assert new_messages[2].role == "assistant"
+        assert "I'm currently unable to help with that due to a technical issue" in new_messages[2].content
         
         # Verify we only got one error message
         error_messages = [m for m in new_messages if "Error executing tool" in m.content]
-        assert len(error_messages) == 1 
+        assert len(error_messages) == 1
+
+@pytest.mark.asyncio
+async def test_streaming_stops_after_tool_error():
+    """Test that streaming stops after a tool error and returns an appropriate message"""
+    agent = Agent(stream=True, model_name="gpt-4o")
+    thread = Thread()
+    thread.add_message(Message(role="user", content="Test message"))
+
+    # Mock streaming responses
+    class MockStreamingWithToolCall:
+        def __init__(self):
+            self.chunks = [
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="Let me check that for you. "), finish_reason="")]),
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(
+                    content="",
+                    tool_calls=[{
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "test_tool",
+                            "arguments": '{"arg": "value"}'
+                        }
+                    }]
+                ), finish_reason="tool_calls")])
+            ]
+            self.current = 0
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            if self.current >= len(self.chunks):
+                raise StopAsyncIteration
+            chunk = self.chunks[self.current]
+            self.current += 1
+            return chunk
+
+    class MockStreamingFinalResponse:
+        def __init__(self):
+            self.chunks = [
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="I'm currently unable to help with that due to a technical issue. "), finish_reason="")]),
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="Is there anything else I can assist you with?"), finish_reason="stop")])
+            ]
+            self.current = 0
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            if self.current >= len(self.chunks):
+                raise StopAsyncIteration
+            chunk = self.chunks[self.current]
+            self.current += 1
+            return chunk
+
+    # Mock _get_completion
+    mock_get_completion = AsyncMock()
+    mock_get_completion.call.side_effect = [
+        (MockStreamingWithToolCall(), DummyCall()),
+        (MockStreamingFinalResponse(), DummyCall())
+    ]
+    
+    # Patch the _get_completion method and tool runner
+    with patch.object(agent, '_get_completion', mock_get_completion), \
+         patch('tyler.models.agent.tool_runner') as mock_tool_runner:
+        # Mock tool execution to raise an error
+        mock_tool_runner.execute_tool_call = AsyncMock(side_effect=Exception("Tool execution failed"))
+        mock_tool_runner.get_tool_attributes.return_value = None
+
+        thread, new_messages = await agent.go(thread)
+
+        # Verify we got the expected sequence of messages
+        assert len(new_messages) == 3
+        
+        # Initial assistant message with tool call
+        assert new_messages[0].role == "assistant"
+        assert new_messages[0].content == "Let me check that for you. "
+        assert new_messages[0].tool_calls is not None
+        assert len(new_messages[0].tool_calls) == 1
+        
+        # Tool error message
+        assert new_messages[1].role == "tool"
+        assert "Error executing tool" in new_messages[1].content
+        
+        # Final assistant message
+        assert new_messages[2].role == "assistant"
+        assert "I'm currently unable to help with that due to a technical issue" in new_messages[2].content
+        
+        # Verify we only called _get_completion twice
+        assert mock_get_completion.call.call_count == 2 
+
+@pytest.mark.asyncio
+async def test_streaming_tool_error_prevents_retries():
+    """Test that a tool error in streaming mode prevents retries and returns appropriate error message"""
+    agent = Agent(stream=True, model_name="gpt-4o")
+    thread = Thread()
+    thread.add_message(Message(role="user", content="Test message"))
+
+    # Mock streaming responses
+    class MockStreamingWithToolCall:
+        def __init__(self):
+            self.chunks = [
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="Let me check that for you. "), finish_reason="")]),
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(
+                    content="",
+                    tool_calls=[{
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "test_tool",
+                            "arguments": '{"arg": "value"}'
+                        }
+                    }]
+                ), finish_reason="tool_calls")])
+            ]
+            self.current = 0
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            if self.current >= len(self.chunks):
+                raise StopAsyncIteration
+            chunk = self.chunks[self.current]
+            self.current += 1
+            return chunk
+
+    class MockStreamingErrorResponse:
+        def __init__(self):
+            self.chunks = [
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="I'm currently unable to help with that due to a technical issue. "), finish_reason="")]),
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="Is there anything else I can assist you with?"), finish_reason="stop")])
+            ]
+            self.current = 0
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            if self.current >= len(self.chunks):
+                raise StopAsyncIteration
+            chunk = self.chunks[self.current]
+            self.current += 1
+            return chunk
+
+    # Mock _get_completion
+    mock_get_completion = AsyncMock()
+    mock_get_completion.call.side_effect = [
+        (MockStreamingWithToolCall(), DummyCall()),
+        (MockStreamingErrorResponse(), DummyCall())
+    ]
+    
+    # Patch the _get_completion method and tool runner
+    with patch.object(agent, '_get_completion', mock_get_completion), \
+         patch('tyler.models.agent.tool_runner') as mock_tool_runner:
+        # Mock tool execution to raise an error
+        mock_tool_runner.execute_tool_call = AsyncMock(side_effect=ValueError("Tool execution failed"))
+        mock_tool_runner.get_tool_attributes.return_value = None
+
+        thread, new_messages = await agent.go(thread)
+
+        # Verify we got exactly 3 messages (initial, error, final)
+        assert len(new_messages) == 3
+        
+        # Initial assistant message with tool call
+        assert new_messages[0].role == "assistant"
+        assert new_messages[0].content == "Let me check that for you. "
+        assert new_messages[0].tool_calls is not None
+        assert len(new_messages[0].tool_calls) == 1
+        
+        # Tool error message
+        assert new_messages[1].role == "tool"
+        assert "Error executing tool" in new_messages[1].content
+        
+        # Final assistant message
+        assert new_messages[2].role == "assistant"
+        assert "I'm currently unable to help with that due to a technical issue" in new_messages[2].content
+        
+        # Verify we only called _get_completion twice (initial + error message)
+        assert mock_get_completion.call.call_count == 2
+        
+        # Verify no additional tool calls were attempted
+        assert mock_tool_runner.execute_tool_call.call_count == 1 
+
+@pytest.mark.asyncio
+async def test_streaming_prevents_multiple_tool_call_attempts():
+    """Test that streaming mode properly stops after a tool error and doesn't make multiple attempts"""
+    agent = Agent(stream=True, model_name="gpt-4o")
+    thread = Thread()
+    thread.add_message(Message(role="user", content="Test message"))
+
+    # Mock streaming responses that simulate multiple tool call attempts
+    class MockStreamingFirstAttempt:
+        def __init__(self):
+            self.chunks = [
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="Let me check that for you. "), finish_reason="")]),
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(
+                    content="",
+                    tool_calls=[{
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "test_tool",
+                            "arguments": '{"arg": "value"}'
+                        }
+                    }]
+                ), finish_reason="tool_calls")])
+            ]
+            self.current = 0
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            if self.current >= len(self.chunks):
+                raise StopAsyncIteration
+            chunk = self.chunks[self.current]
+            self.current += 1
+            return chunk
+
+    class MockStreamingSecondAttempt:
+        def __init__(self):
+            self.chunks = [
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="Let me try that again. "), finish_reason="")]),
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(
+                    content="",
+                    tool_calls=[{
+                        "id": "call-2",
+                        "type": "function",
+                        "function": {
+                            "name": "test_tool",
+                            "arguments": '{"arg": "value2"}'
+                        }
+                    }]
+                ), finish_reason="tool_calls")])
+            ]
+            self.current = 0
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            if self.current >= len(self.chunks):
+                raise StopAsyncIteration
+            chunk = self.chunks[self.current]
+            self.current += 1
+            return chunk
+
+    class MockStreamingErrorResponse:
+        def __init__(self):
+            self.chunks = [
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="I'm currently unable to help with that due to a technical issue. "), finish_reason="")]),
+                FakeChunk(choices=[FakeChoice(delta=FakeDelta(content="Is there anything else I can assist you with?"), finish_reason="stop")])
+            ]
+            self.current = 0
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            if self.current >= len(self.chunks):
+                raise StopAsyncIteration
+            chunk = self.chunks[self.current]
+            self.current += 1
+            return chunk
+
+    # Mock _get_completion to simulate multiple attempts
+    mock_get_completion = AsyncMock()
+    mock_get_completion.call.side_effect = [
+        (MockStreamingFirstAttempt(), DummyCall()),
+        (MockStreamingErrorResponse(), DummyCall())
+    ]
+    
+    # Patch the _get_completion method and tool runner
+    with patch.object(agent, '_get_completion', mock_get_completion), \
+         patch('tyler.models.agent.tool_runner') as mock_tool_runner:
+        # Mock tool execution to raise an error
+        mock_tool_runner.execute_tool_call = AsyncMock(side_effect=ValueError("Tool execution failed"))
+        mock_tool_runner.get_tool_attributes.return_value = None
+
+        thread, new_messages = await agent.go(thread)
+
+        # Verify we got exactly 3 messages (initial, error, final)
+        assert len(new_messages) == 3
+        
+        # Initial assistant message with tool call
+        assert new_messages[0].role == "assistant"
+        assert new_messages[0].content == "Let me check that for you. "
+        assert new_messages[0].tool_calls is not None
+        assert len(new_messages[0].tool_calls) == 1
+        
+        # Tool error message
+        assert new_messages[1].role == "tool"
+        assert "Error executing tool" in new_messages[1].content
+        
+        # Final assistant message
+        assert new_messages[2].role == "assistant"
+        assert "I'm currently unable to help with that due to a technical issue" in new_messages[2].content
+        
+        # Verify we only called _get_completion twice (initial + error message)
+        assert mock_get_completion.call.call_count == 2
+        
+        # Verify no additional tool calls were attempted
+        assert mock_tool_runner.execute_tool_call.call_count == 1
+        
+        # Verify we didn't try to process any more tool calls after the error
+        tool_calls = [msg for msg in new_messages if msg.tool_calls is not None]
+        assert len(tool_calls) == 1
+        assert tool_calls[0].tool_calls[0]["id"] == "call-1" 

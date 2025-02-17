@@ -265,28 +265,25 @@ class ToolRunner:
             
         Returns:
             dict: Formatted result in chat completion format
+            
+        Raises:
+            Exception: If there is an error executing the tool
         """
         # Ensure tool_name is a string
         tool_name = str(tool_call.function.name)
         tool_args = json.loads(tool_call.function.arguments)
         
-        try:
-            if tool_name in self.tools and self.tools[tool_name].get('is_async', False):
-                result = await self.run_tool_async(tool_name, tool_args)
-            else:
-                result = self.run_tool(tool_name, tool_args)
-                
-            return {
-                "tool_call_id": tool_call.id,
-                "name": tool_name,  # Use the string version of the name
-                "content": str(result)
-            }
-        except Exception as e:
-            return {
-                "tool_call_id": tool_call.id,
-                "name": tool_name,  # Use the string version of the name
-                "content": f"Error executing tool: {str(e)}"
-            }
+        # Execute the tool and let any errors propagate up
+        if tool_name in self.tools and self.tools[tool_name].get('is_async', False):
+            result = await self.run_tool_async(tool_name, tool_args)
+        else:
+            result = self.run_tool(tool_name, tool_args)
+            
+        return {
+            "tool_call_id": tool_call.id,
+            "name": tool_name,  # Use the string version of the name
+            "content": str(result)
+        }
 
 # Create a shared instance
 tool_runner = ToolRunner() 

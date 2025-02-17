@@ -373,6 +373,11 @@ class Agent(Model):
                 "name": tool_name,
                 "content": f"Error executing tool: {str(e)}"
             }
+            # Return True to stop further processing after a tool error
+            should_break = True
+        else:
+            # Only check interrupt attribute if tool executed successfully
+            should_break = tool_attributes and tool_attributes.get('type') == 'interrupt'
 
         # Create tool metrics
         tool_metrics = {
@@ -395,11 +400,7 @@ class Agent(Model):
         thread.add_message(message)
         new_messages.append(message)
 
-        # Check if this is an interrupt tool
-        if tool_attributes and tool_attributes.get('type') == 'interrupt':
-            return True
-
-        return False
+        return should_break
 
     async def _handle_max_iterations(self, thread: Thread, new_messages: List[Message]) -> Tuple[Thread, List[Message]]:
         """Handle the case when max iterations is reached."""
@@ -477,14 +478,32 @@ class Agent(Model):
 
             # Process tool calls if any
             if has_tool_calls:
-                should_break = False
                 for tool_call in tool_calls:
-                    if await self._process_tool_call(tool_call, thread, new_messages):
-                        should_break = True
-                        break
-                if should_break:
-                    break
-            
+                    should_break = await self._process_tool_call(tool_call, thread, new_messages)
+                    if should_break:
+                        # Add a final message indicating we can't help due to the error
+                        error_response, error_metrics = await self.step(thread)
+                        if self.stream:
+                            error_content = ""
+                            async for chunk in error_response:
+                                if hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
+                                    error_content += chunk.choices[0].delta.content
+                        else:
+                            error_content = error_response.choices[0].message.content
+                        
+                        message = Message(
+                            role="assistant",
+                            content=error_content or "I'm currently unable to help with that due to a technical issue. Is there anything else I can assist you with?",
+                            metrics=error_metrics
+                        )
+                        thread.add_message(message)
+                        new_messages.append(message)
+                        
+                        # Save state and return immediately after error
+                        if self.thread_store:
+                            await self.thread_store.save(thread)
+                        return thread, [m for m in new_messages if m.role != "user"]
+
             # Create and add assistant message for post-tool content if any
             if post_tool:
                 message = Message(
