@@ -19,6 +19,7 @@ NOTION_TOOLS = []
 IMAGE_TOOLS = []
 AUDIO_TOOLS = []
 FILES_TOOLS = []
+BROWSER_TOOLS = []
 
 # Combined tools list
 TOOLS = []
@@ -32,6 +33,7 @@ try:
     from . import image as image_module
     from . import audio as audio_module
     from . import files as files_module
+    from . import browser as browser_module
 except ImportError as e:
     print(f"Warning: Some tool modules could not be imported: {e}")
 
@@ -85,6 +87,13 @@ try:
 except Exception as e:
     print(f"Warning: Could not load files tools: {e}")
 
+try:
+    module_tools = getattr(browser_module, "TOOLS", [])
+    BROWSER_TOOLS.extend(module_tools)
+    TOOLS.extend(module_tools)
+except Exception as e:
+    print(f"Warning: Could not load browser tools: {e}")
+
 __all__ = [
     'TOOLS',
     'WEB_TOOLS',
@@ -93,7 +102,8 @@ __all__ = [
     'NOTION_TOOLS',
     'IMAGE_TOOLS',
     'AUDIO_TOOLS',
-    'FILES_TOOLS'
+    'FILES_TOOLS',
+    'BROWSER_TOOLS'
 ]
 
 # Map of module names to their tools for dynamic loading
@@ -104,5 +114,6 @@ TOOL_MODULES: Dict[str, List] = {
     'notion': NOTION_TOOLS,
     'image': IMAGE_TOOLS,
     'audio': AUDIO_TOOLS,
-    'files': FILES_TOOLS
+    'files': FILES_TOOLS,
+    'browser': BROWSER_TOOLS
 } 
