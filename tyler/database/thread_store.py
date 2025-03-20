@@ -18,6 +18,7 @@ class ThreadStore:
     - Memory backend for development/testing
     - SQLite for local persistence
     - PostgreSQL for production
+    - Built-in connection pooling for SQLBackend
     
     Usage:
         # Memory storage (default when no environment variables or URL provided)
@@ -39,6 +40,12 @@ class ThreadStore:
         thread = Thread()
         await store.save(thread)
         result = await store.get(thread.id)
+        
+    Connection pooling settings can be configured via environment variables:
+        - TYLER_DB_POOL_SIZE: Max number of connections to keep open (default: 5)
+        - TYLER_DB_MAX_OVERFLOW: Max number of connections to create above pool_size (default: 10)
+        - TYLER_DB_POOL_TIMEOUT: Seconds to wait for a connection from pool (default: 30)
+        - TYLER_DB_POOL_RECYCLE: Seconds after which a connection is recycled (default: 300)
     """
     
     def __init__(self, database_url: Optional[str] = None):
@@ -157,10 +164,6 @@ class ThreadStore:
     @property
     def engine(self):
         return getattr(self._backend, "engine", None)
-
-    @property
-    def async_session(self):
-        return getattr(self._backend, "async_session", None)
 
 # Optional PostgreSQL-specific implementation
 try:

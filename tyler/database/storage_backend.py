@@ -121,7 +121,7 @@ class MemoryBackend(StorageBackend):
         return threads
 
 class SQLBackend(StorageBackend):
-    """SQL storage backend supporting both SQLite and PostgreSQL."""
+    """SQL storage backend supporting both SQLite and PostgreSQL with proper connection pooling."""
     
     def __init__(self, database_url: Optional[str] = None):
         if database_url is None:
@@ -134,30 +134,54 @@ class SQLBackend(StorageBackend):
             
         self.database_url = database_url
         
-        # Configure engine options
+        # Configure engine options with better defaults for connection pooling
         engine_kwargs = {
             'echo': os.environ.get("TYLER_DB_ECHO", "").lower() == "true"
         }
         
-        # Add pool configuration if specified and not using SQLite
+        # Add pool configuration if not using SQLite
         if not self.database_url.startswith('sqlite'):
-            pool_size = os.environ.get("TYLER_DB_POOL_SIZE")
-            max_overflow = os.environ.get("TYLER_DB_MAX_OVERFLOW")
+            # Default connection pool settings if not specified
+            pool_size = int(os.environ.get("TYLER_DB_POOL_SIZE", "5"))
+            max_overflow = int(os.environ.get("TYLER_DB_MAX_OVERFLOW", "10"))
+            pool_timeout = int(os.environ.get("TYLER_DB_POOL_TIMEOUT", "30"))
+            pool_recycle = int(os.environ.get("TYLER_DB_POOL_RECYCLE", "300"))
             
-            if pool_size is not None:
-                engine_kwargs['pool_size'] = int(pool_size)
-            if max_overflow is not None:
-                engine_kwargs['max_overflow'] = int(max_overflow)
+            engine_kwargs.update({
+                'pool_size': pool_size,
+                'max_overflow': max_overflow, 
+                'pool_timeout': pool_timeout,
+                'pool_recycle': pool_recycle,
+                'pool_pre_ping': True  # Check connection validity before using from pool
+            })
+            
+            logger.info(f"Configuring database connection pool: size={pool_size}, "
+                       f"max_overflow={max_overflow}, timeout={pool_timeout}, "
+                       f"recycle={pool_recycle}")
             
         self.engine = create_async_engine(self.database_url, **engine_kwargs)
-        self.async_session = sessionmaker(
-            self.engine, class_=AsyncSession, expire_on_commit=False
-        )
+        # Create session_maker even though we don't use it directly in our implementation,
+        # to support backward compatibility with tests
+        self._session_maker = sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
+        
+    @property
+    def async_session(self):
+        """
+        Provides backward compatibility with tests that directly access backend.async_session
+        
+        Returns the session factory for creating new database sessions.
+        
+        NOTE: This is kept for backward compatibility with existing tests but should 
+        not be used in new code. Use _get_session() method instead which properly
+        creates a session for each database operation.
+        """
+        return self._session_maker
 
     async def initialize(self) -> None:
         """Initialize the database by creating tables if they don't exist."""
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            logger.info(f"Database initialized with tables: {Base.metadata.tables.keys()}")
 
     def _create_message_from_record(self, msg_record: MessageRecord) -> Message:
         """Helper method to create a Message from a MessageRecord"""
@@ -214,13 +238,26 @@ class SQLBackend(StorageBackend):
             attachments=[a.model_dump() for a in message.attachments] if message.attachments else None,
             metrics=message.metrics
         )
+    
+    async def _get_session(self) -> AsyncSession:
+        """Create and return a new session for database operations."""
+        return self._session_maker()
+
+    async def _cleanup_failed_attachments(self, thread: Thread) -> None:
+        """Helper to clean up attachment files if thread save fails"""
+        for message in thread.messages:
+            if message.attachments:
+                for attachment in message.attachments:
+                    if hasattr(attachment, 'cleanup') and callable(attachment.cleanup):
+                        await attachment.cleanup()
 
     async def save(self, thread: Thread) -> Thread:
         """Save a thread and its messages to the database."""
-        async with self.async_session() as session:
+        session = await self._get_session()
+        try:
+            # First process and store all attachments
+            logger.info(f"Starting to process attachments for thread {thread.id}")
             try:
-                # First process and store all attachments
-                logger.info(f"Starting to process attachments for thread {thread.id}")
                 for message in thread.messages:
                     if message.attachments:
                         logger.info(f"Processing {len(message.attachments)} attachments for message {message.id}")
@@ -228,82 +265,97 @@ class SQLBackend(StorageBackend):
                             logger.info(f"Processing attachment {attachment.filename} with status {attachment.status}")
                             await attachment.process_and_store()
                             logger.info(f"Finished processing attachment {attachment.filename}, new status: {attachment.status}")
-
-                async with session.begin():
-                    # Get existing thread if it exists
-                    stmt = select(ThreadRecord).options(selectinload(ThreadRecord.messages)).where(ThreadRecord.id == thread.id)
-                    result = await session.execute(stmt)
-                    thread_record = result.scalar_one_or_none()
-                    
-                    if thread_record:
-                        # Update existing thread
-                        thread_record.title = thread.title
-                        thread_record.attributes = thread.attributes
-                        thread_record.source = thread.source
-                        thread_record.updated_at = datetime.now(UTC)
-                        thread_record.messages = []  # Clear existing messages
-                    else:
-                        # Create new thread record
-                        thread_record = ThreadRecord(
-                            id=thread.id,
-                            title=thread.title,
-                            attributes=thread.attributes,
-                            source=thread.source,
-                            created_at=thread.created_at,
-                            updated_at=thread.updated_at,
-                            messages=[]
-                        )
-                    
-                    # Process messages in order
-                    sequence = 1
-                    
-                    # First handle system messages
-                    for message in thread.messages:
-                        if message.role == "system":
-                            thread_record.messages.append(self._create_message_record(message, thread.id, 0))
-                    
-                    # Then handle non-system messages
-                    for message in thread.messages:
-                        if message.role != "system":
-                            thread_record.messages.append(self._create_message_record(message, thread.id, sequence))
-                            sequence += 1
-                    
-                    session.add(thread_record)
-                    await session.commit()
-                    return thread
-                    
             except Exception as e:
-                # If database operation failed after attachment storage,
-                # we don't need to clean up attachments as they might be used by other threads
-                if isinstance(e, RuntimeError) and "Failed to process attachment" in str(e):
-                    # Only clean up if attachment processing/storage failed
-                    await self._cleanup_failed_attachments(thread)
-                if "Database error" in str(e):
-                    # Don't clean up attachments for database errors
-                    raise RuntimeError(f"Failed to save thread: Database error") from e
+                # Handle attachment processing failures
+                logger.error(f"Failed to process attachment: {str(e)}")
+                await self._cleanup_failed_attachments(thread)
                 raise RuntimeError(f"Failed to save thread: {str(e)}") from e
+
+            async with session.begin():
+                # Get existing thread if it exists
+                stmt = select(ThreadRecord).options(selectinload(ThreadRecord.messages)).where(ThreadRecord.id == thread.id)
+                result = await session.execute(stmt)
+                thread_record = result.scalar_one_or_none()
+                
+                if thread_record:
+                    # Update existing thread
+                    thread_record.title = thread.title
+                    thread_record.attributes = thread.attributes
+                    thread_record.source = thread.source
+                    thread_record.updated_at = datetime.now(UTC)
+                    thread_record.messages = []  # Clear existing messages
+                else:
+                    # Create new thread record
+                    thread_record = ThreadRecord(
+                        id=thread.id,
+                        title=thread.title,
+                        attributes=thread.attributes,
+                        source=thread.source,
+                        created_at=thread.created_at,
+                        updated_at=thread.updated_at,
+                        messages=[]
+                    )
+                
+                # Process messages in order
+                sequence = 1
+                
+                # First handle system messages
+                for message in thread.messages:
+                    if message.role == "system":
+                        thread_record.messages.append(self._create_message_record(message, thread.id, 0))
+                
+                # Then handle non-system messages
+                for message in thread.messages:
+                    if message.role != "system":
+                        thread_record.messages.append(self._create_message_record(message, thread.id, sequence))
+                        sequence += 1
+                
+                session.add(thread_record)
+                try:
+                    await session.commit()
+                except Exception as e:
+                    # For test compatibility - convert database errors to RuntimeError
+                    # This helps maintain backward compatibility with tests expecting RuntimeError
+                    logger.error(f"Database error during commit: {str(e)}")
+                    raise RuntimeError(f"Failed to save thread: Database error") from e
+                return thread
+                
+        except Exception as e:
+            # If this is not already a RuntimeError, wrap it
+            if not isinstance(e, RuntimeError):
+                raise RuntimeError(f"Failed to save thread: {str(e)}") from e
+            raise e
+        finally:
+            await session.close()
 
     async def get(self, thread_id: str) -> Optional[Thread]:
         """Get a thread by ID."""
-        async with self.async_session() as session:
+        session = await self._get_session()
+        try:
             stmt = select(ThreadRecord).options(selectinload(ThreadRecord.messages)).where(ThreadRecord.id == thread_id)
             result = await session.execute(stmt)
             thread_record = result.scalar_one_or_none()
             return self._create_thread_from_record(thread_record) if thread_record else None
+        finally:
+            await session.close()
 
     async def delete(self, thread_id: str) -> bool:
         """Delete a thread by ID."""
-        async with self.async_session() as session:
+        session = await self._get_session()
+        try:
             async with session.begin():
                 record = await session.get(ThreadRecord, thread_id)
                 if record:
                     await session.delete(record)
                     return True
                 return False
+        finally:
+            await session.close()
 
     async def list(self, limit: int = 100, offset: int = 0) -> List[Thread]:
         """List threads with pagination."""
-        async with self.async_session() as session:
+        session = await self._get_session()
+        try:
             result = await session.execute(
                 select(ThreadRecord)
                 .options(selectinload(ThreadRecord.messages))
@@ -312,10 +364,13 @@ class SQLBackend(StorageBackend):
                 .offset(offset)
             )
             return [self._create_thread_from_record(record) for record in result.scalars().all()]
+        finally:
+            await session.close()
 
     async def find_by_attributes(self, attributes: Dict[str, Any]) -> List[Thread]:
         """Find threads by matching attributes."""
-        async with self.async_session() as session:
+        session = await self._get_session()
+        try:
             query = select(ThreadRecord).options(selectinload(ThreadRecord.messages))
             for key, value in attributes.items():
                 if self.database_url.startswith('sqlite'):
@@ -326,10 +381,13 @@ class SQLBackend(StorageBackend):
                     query = query.where(ThreadRecord.attributes[key].astext == str(value))
             result = await session.execute(query)
             return [self._create_thread_from_record(record) for record in result.scalars().all()]
+        finally:
+            await session.close()
 
     async def find_by_source(self, source_name: str, properties: Dict[str, Any]) -> List[Thread]:
         """Find threads by source name and properties."""
-        async with self.async_session() as session:
+        session = await self._get_session()
+        try:
             query = select(ThreadRecord).options(selectinload(ThreadRecord.messages))
             
             if self.database_url.startswith('sqlite'):
@@ -346,10 +404,13 @@ class SQLBackend(StorageBackend):
             
             result = await session.execute(query)
             return [self._create_thread_from_record(record) for record in result.scalars().all()]
+        finally:
+            await session.close()
 
     async def list_recent(self, limit: Optional[int] = None) -> List[Thread]:
         """List recent threads ordered by updated_at timestamp."""
-        async with self.async_session() as session:
+        session = await self._get_session()
+        try:
             result = await session.execute(
                 select(ThreadRecord)
                 .options(selectinload(ThreadRecord.messages))
@@ -357,3 +418,5 @@ class SQLBackend(StorageBackend):
                 .limit(limit)
             )
             return [self._create_thread_from_record(record) for record in result.scalars().all()] 
+        finally:
+            await session.close() 
