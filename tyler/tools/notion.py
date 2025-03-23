@@ -217,7 +217,7 @@ TOOLS = [
             "type": "function",
             "function": {
                 "name": "notion-search",
-                "description": "Searches all titles of pages and databases in Notion that have been shared with the integration. Can search by title or filter to only pages/databases.",
+                "description": "Searches all titles of pages and databases in Notion that have been shared with the integration. Can search by title or filter to only pages/databases. When constructing queries: • Include relevant keywords and filters (e.g., by title or tags) to precisely target the desired content. • Keep queries concise and leverage pagination to optimize performance. • Refine or expand filters and query terms over time for incremental improvements.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -245,7 +245,7 @@ TOOLS = [
                         },
                         "page_size": {
                             "type": "integer",
-                            "description": "Number of results to return. Default 100. Optional.",
+                            "description": "Number of results to return. Default 5. Required.",
                             "minimum": 1,
                             "maximum": 100
                         }
