@@ -372,15 +372,42 @@ class SQLBackend(StorageBackend):
         session = await self._get_session()
         try:
             query = select(ThreadRecord).options(selectinload(ThreadRecord.messages))
+            
             for key, value in attributes.items():
                 if self.database_url.startswith('sqlite'):
                     # Use SQLite json_extract
                     query = query.where(text(f"json_extract(attributes, '$.{key}') = :value").bindparams(value=str(value)))
                 else:
-                    # Use PostgreSQL JSONB operators
-                    query = query.where(ThreadRecord.attributes[key].astext == str(value))
+                    # Use PostgreSQL JSONB operators via text() for direct SQL control
+                    logger.info(f"Searching for attribute[{key}] = {value} (type: {type(value)})")
+                    
+                    # Handle different value types appropriately
+                    if value is None:
+                        # Check for null/None values
+                        query = query.where(text(f"attributes->>'{key}' IS NULL"))
+                    else:
+                        # Convert value to string for text comparison
+                        str_value = str(value)
+                        if isinstance(value, bool):
+                            # Convert boolean to lowercase string
+                            str_value = str(value).lower()
+                        
+                        # Use PostgreSQL's JSONB operators for direct string comparison
+                        param_name = f"attr_{key}"
+                        query = query.where(
+                            text(f"attributes->>'{key}' = :{param_name}").bindparams(**{param_name: str_value})
+                        )
+            
+            # Log the final query for debugging
+            logger.info(f"Executing find_by_attributes query: {query}")
+            
             result = await session.execute(query)
-            return [self._create_thread_from_record(record) for record in result.scalars().all()]
+            threads = [self._create_thread_from_record(record) for record in result.scalars().all()]
+            logger.info(f"Found {len(threads)} matching threads")
+            return threads
+        except Exception as e:
+            logger.error(f"Error in find_by_attributes: {str(e)}")
+            raise
         finally:
             await session.close()
 
@@ -397,13 +424,41 @@ class SQLBackend(StorageBackend):
                 for key, value in properties.items():
                     query = query.where(text(f"json_extract(source, '$.{key}') = :value_{key}").bindparams(**{f"value_{key}": str(value)}))
             else:
-                # Use PostgreSQL JSONB operators
-                query = query.where(cast(ThreadRecord.source['name'], String) == source_name)
+                # Use PostgreSQL JSONB operators via text() to ensure proper SQL generation
+                query = query.where(text("source->>'name' = :source_name").bindparams(source_name=source_name))
+                
+                # Add property conditions with text() for proper PostgreSQL JSONB syntax
                 for key, value in properties.items():
-                    query = query.where(cast(ThreadRecord.source[key], String) == str(value))
+                    # Log the query parameters for debugging
+                    logger.info(f"Searching for source[{key}] = {value} (type: {type(value)})")
+                    
+                    # Handle different value types appropriately
+                    if value is None:
+                        # Check for null/None values
+                        query = query.where(text(f"source->>'{key}' IS NULL"))
+                    else:
+                        # Convert value to string for text comparison
+                        str_value = str(value)
+                        if isinstance(value, bool):
+                            # Convert boolean to lowercase string
+                            str_value = str(value).lower()
+                        
+                        # Use PostgreSQL's JSONB operators for direct string comparison
+                        param_name = f"source_{key}"
+                        query = query.where(
+                            text(f"source->>'{key}' = :{param_name}").bindparams(**{param_name: str_value})
+                        )
+            
+            # Log the final query for debugging
+            logger.info(f"Executing find_by_source query: {query}")
             
             result = await session.execute(query)
-            return [self._create_thread_from_record(record) for record in result.scalars().all()]
+            threads = [self._create_thread_from_record(record) for record in result.scalars().all()]
+            logger.info(f"Found {len(threads)} matching threads")
+            return threads
+        except Exception as e:
+            logger.error(f"Error in find_by_source: {str(e)}")
+            raise
         finally:
             await session.close()
 
