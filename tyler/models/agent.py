@@ -14,7 +14,11 @@ from tyler.database.thread_store import ThreadStore
 from tyler.utils.tool_runner import tool_runner
 from enum import Enum
 from tyler.utils.logging import get_logger
-from tyler.utils.tool_runner import tool_runner
+import asyncio
+from functools import partial
+
+# Import the agent_runner
+from tyler.utils.agent_runner import agent_runner
 
 # Get configured logger
 logger = get_logger(__name__)
@@ -111,6 +115,7 @@ class Agent(Model):
     tools: List[Union[str, Dict]] = Field(default_factory=list, description="List of tools available to the agent. Can include built-in tool module names (as strings) and custom tools (as dicts with required 'definition' and 'implementation' keys, and an optional 'attributes' key for tool metadata).")
     max_tool_iterations: int = Field(default=10)
     thread_store: Optional[ThreadStore] = Field(default=None, description="Thread storage implementation. Uses ThreadStore with memory backend by default.")
+    agents: List["Agent"] = Field(default_factory=list, description="List of agents that this agent can delegate tasks to.")
     
     _prompt: AgentPrompt = PrivateAttr(default_factory=AgentPrompt)
     _iteration_count: int = PrivateAttr(default=0)
@@ -155,6 +160,56 @@ class Agent(Model):
                 self._processed_tools.append(tool['definition'])
             else:
                 raise ValueError(f"Invalid tool type: {type(tool)}")
+        
+        # Register delegation tools for agents
+        if self.agents:
+            for agent in self.agents:
+                # Register agent with agent_runner
+                agent_runner.register_agent(agent.name, agent)
+                
+                # Define delegation handler function
+                async def delegation_handler(task, context=None, agent_name=agent.name):
+                    # Properly await the coroutine
+                    return await agent_runner.run_agent(agent_name, task, context)
+                
+                # Create a tool definition for this agent
+                tool_def = {
+                    "type": "function",
+                    "function": {
+                        "name": f"delegate_to_{agent.name}",
+                        "description": f"Delegate task to {agent.name}: {agent.purpose}",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "task": {
+                                    "type": "string",
+                                    "description": f"The task or question to delegate to the {agent.name} agent"
+                                },
+                                "context": {
+                                    "type": "object",
+                                    "description": "Additional context to provide to the agent (optional)",
+                                    "additionalProperties": True
+                                }
+                            },
+                            "required": ["task"]
+                        }
+                    }
+                }
+                
+                # Add to processed tools so it's available to the LLM
+                self._processed_tools.append(tool_def)
+                
+                # Register the tool implementation
+                # Use an immediately-invoked lambda to preserve the agent_name in the closure
+                handler = lambda name=agent.name: partial(delegation_handler, agent_name=name)
+                
+                tool_runner.register_tool(
+                    name=f"delegate_to_{agent.name}",
+                    implementation=handler(),
+                    definition=tool_def["function"]
+                )
+                
+                logger.info(f"Registered agent tool: delegate_to_{agent.name}")
 
     @weave.op()
     def _normalize_tool_call(self, tool_call):
@@ -191,86 +246,6 @@ class Agent(Model):
             normalized_tool_call.function.arguments = "{}"
         
         return await tool_runner.execute_tool_call(normalized_tool_call)
-
-    @weave.op()
-    async def _process_streaming_chunks(self, chunks) -> Tuple[str, str, List[Dict], Dict]:
-        """Process streaming chunks from the LLM.
-        
-        Args:
-            chunks: Async generator of completion chunks
-        
-        Returns:
-            Tuple[str, str, List[Dict], Dict]: A tuple containing:
-                - pre_tool_content: aggregated content prior to any tool call
-                - post_tool_content: aggregated content after the first tool call
-                - tool_calls: list of tool calls encountered (from the first chunk with tool calls)
-                - usage_metrics: taken from the final chunk
-        """
-        if chunks is None or not hasattr(chunks, '__aiter__'):
-            raise TypeError(f"'async for' requires an object with __aiter__ method, got {type(chunks).__name__}")
-
-        pre_tool_content = ""
-        post_tool_content = ""
-        tool_calls = []
-        encountered_tool = False
-        final_chunk = None
-        current_tool_call = None
-
-        async for chunk in chunks:
-            final_chunk = chunk
-            delta = chunk.choices[0].delta
-            if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                if not encountered_tool:
-                    # First time encountering tool calls, record them
-                    for tc in delta.tool_calls:
-                        if isinstance(tc, dict):
-                            normalized = tc
-                        else:
-                            normalized = {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.function.name,
-                                    "arguments": tc.function.arguments
-                                }
-                            }
-                        tool_calls.append(normalized)
-                        current_tool_call = normalized
-                    encountered_tool = True
-                else:
-                    # Already encountered tool calls; append continuation chunks' arguments
-                    for tc in delta.tool_calls:
-                        if current_tool_call is not None and isinstance(tc, dict) and not tc.get("id"):
-                            current_tool_call["function"]["arguments"] += tc.get("function", {}).get("arguments", "")
-                        elif current_tool_call is not None and not hasattr(tc, 'id'):
-                            current_tool_call["function"]["arguments"] += getattr(tc.function, 'arguments', "")
-                    # After processing continuation chunks, normalize the aggregated JSON string
-                    if current_tool_call is not None:
-                        agg = current_tool_call["function"]["arguments"].strip()
-                        if not agg.startswith("{"):
-                            agg = "{" + agg
-                        if not agg.endswith("}"):
-                            agg = agg + "}"
-                        current_tool_call["function"]["arguments"] = agg
-                if hasattr(delta, 'content') and delta.content is not None:
-                    post_tool_content += delta.content
-            else:
-                if not encountered_tool:
-                    if hasattr(delta, 'content') and delta.content is not None:
-                        pre_tool_content += delta.content
-                else:
-                    if hasattr(delta, 'content') and delta.content is not None:
-                        post_tool_content += delta.content
-
-        usage_metrics = {}
-        if final_chunk and hasattr(final_chunk, 'usage') and final_chunk.usage:
-            usage_metrics = {
-                "completion_tokens": final_chunk.usage.completion_tokens,
-                "prompt_tokens": final_chunk.usage.prompt_tokens,
-                "total_tokens": final_chunk.usage.total_tokens
-            }
-
-        return pre_tool_content, post_tool_content, tool_calls, usage_metrics
 
     @weave.op()
     async def _get_completion(self, **completion_params) -> Any:
@@ -578,13 +553,91 @@ class Agent(Model):
                         thread.add_message(message)
                         new_messages.append(message)
 
-                    # Process tool calls if any
+                    # Process tool calls if any (in parallel)
                     if has_tool_calls:
+                        # Execute all tool calls in parallel
+                        tool_tasks = [
+                            self._handle_tool_execution(tool_call)
+                            for tool_call in tool_calls
+                        ]
+                        
+                        # Gather results (with exception handling)
+                        tool_results = await asyncio.gather(*tool_tasks, return_exceptions=True)
+                        
+                        # Process results sequentially to update thread safely
                         should_break = False
-                        for tool_call in tool_calls:
-                            if await self._process_tool_call(tool_call, thread, new_messages):
+                        for i, result in enumerate(tool_results):
+                            tool_call = tool_calls[i]
+                            tool_name = tool_call.function.name if hasattr(tool_call, 'function') else tool_call['function']['name']
+                            
+                            # Handle exceptions in tool execution
+                            if isinstance(result, Exception):
+                                error_msg = f"Tool execution failed: {str(result)}"
+                                tool_message = Message(
+                                    role="tool",
+                                    name=tool_name,
+                                    content=error_msg,
+                                    tool_call_id=tool_call.id if hasattr(tool_call, 'id') else tool_call.get('id'),
+                                    metrics={
+                                        "timing": {
+                                            "started_at": datetime.now(UTC).isoformat(),
+                                            "ended_at": datetime.now(UTC).isoformat(),
+                                            "latency": 0
+                                        }
+                                    }
+                                )
+                                thread.add_message(tool_message)
+                                new_messages.append(tool_message)
+                                continue
+                            
+                            # Process successful result
+                            content = None
+                            files = []
+                            
+                            if isinstance(result, tuple):
+                                # Handle tuple return (content, files)
+                                content = str(result[0])
+                                if len(result) >= 2:
+                                    files = result[1]
+                            else:
+                                # Handle any content type - just convert to string
+                                content = str(result)
+                                
+                            # Create tool message
+                            tool_message = Message(
+                                role="tool",
+                                name=tool_name,
+                                content=content,
+                                tool_call_id=tool_call.id if hasattr(tool_call, 'id') else tool_call.get('id'),
+                                metrics={
+                                    "timing": {
+                                        "started_at": datetime.now(UTC).isoformat(),
+                                        "ended_at": datetime.now(UTC).isoformat(),
+                                        "latency": 0
+                                    }
+                                }
+                            )
+                            
+                            # Add any files as attachments
+                            if files:
+                                logger.debug(f"Processing {len(files)} files from tool result")
+                                for file_info in files:
+                                    logger.debug(f"Creating attachment for {file_info.get('filename')} with mime type {file_info.get('mime_type')}")
+                                    attachment = Attachment(
+                                        filename=file_info["filename"],
+                                        content=file_info["content"],
+                                        mime_type=file_info["mime_type"]
+                                    )
+                                    tool_message.attachments.append(attachment)
+                            
+                            # Add message to thread and new_messages
+                            thread.add_message(tool_message)
+                            new_messages.append(tool_message)
+                            
+                            # Check if tool wants to break iteration
+                            tool_attributes = tool_runner.get_tool_attributes(tool_name)
+                            if tool_attributes and tool_attributes.get('type') == 'interrupt':
                                 should_break = True
-                                break
                                 
                         # Save after processing all tool calls but before next completion
                         if self.thread_store:
@@ -850,10 +903,11 @@ class Agent(Model):
                             await self.thread_store.save(thread)
                         break
 
-                    # Execute tools and yield results
-                    should_break = False
-                    for tool_call in current_tool_calls:
-                        try:
+                    # Execute tools in parallel and yield results
+                    try:
+                        # Prepare all tool calls for parallel execution
+                        tool_tasks = []
+                        for tool_call in current_tool_calls:
                             # Ensure we have valid JSON for arguments
                             args = tool_call['function']['arguments']
                             if not args.strip():
@@ -872,22 +926,58 @@ class Agent(Model):
 
                             tool_call['function']['arguments'] = json.dumps(parsed_args)
                             
-                            # Process tool call using shared method
-                            if await self._process_tool_call(tool_call, thread, new_messages):
-                                should_break = True
+                            # Add to tasks
+                            tool_tasks.append(self._handle_tool_execution(tool_call))
                             
-                            # Get the tool message that was just added and yield it
-                            if new_messages and new_messages[-1].role == "tool":
-                                yield StreamUpdate(StreamUpdate.Type.TOOL_MESSAGE, new_messages[-1])
+                        # Execute all tool calls in parallel
+                        tool_results = await asyncio.gather(*tool_tasks, return_exceptions=True)
+                        
+                        # Process results sequentially to update thread safely
+                        should_break = False
+                        for i, result in enumerate(tool_results):
+                            tool_call = current_tool_calls[i]
+                            tool_name = tool_call['function']['name']
+                            
+                            # Handle exceptions in tool execution
+                            if isinstance(result, Exception):
+                                error_msg = f"Tool execution failed: {str(result)}"
+                                error_message = Message(
+                                    role="tool",
+                                    name=tool_name,
+                                    content=error_msg,
+                                    tool_call_id=tool_call['id'],
+                                    metrics={
+                                        "timing": {
+                                            "started_at": datetime.now(UTC).isoformat(),
+                                            "ended_at": datetime.now(UTC).isoformat(),
+                                            "latency": 0
+                                        }
+                                    }
+                                )
+                                thread.add_message(error_message)
+                                new_messages.append(error_message)
+                                yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
+                                continue
+                            
+                            # Process successful result
+                            content = None
+                            files = []
+                            
+                            if isinstance(result, tuple):
+                                # Handle tuple return (content, files)
+                                content = str(result[0])
+                                if len(result) >= 2:
+                                    files = result[1]
+                            else:
+                                # Handle any content type - just convert to string
+                                content = str(result)
                                 
-                            if should_break:
-                                break
-                                
-                        except Exception as e:
-                            error_msg = f"Tool execution failed: {str(e)}"
-                            error_message = Message(
-                                role="assistant",
-                                content=f"I encountered an error: {error_msg}. Please try again.",
+                            # Create tool message
+                            tool_message = Message(
+                                role="tool",
+                                name=tool_name,
+                                content=content,
+                                tool_call_id=tool_call['id'],
                                 metrics={
                                     "timing": {
                                         "started_at": datetime.now(UTC).isoformat(),
@@ -896,13 +986,56 @@ class Agent(Model):
                                     }
                                 }
                             )
-                            thread.add_message(error_message)
-                            new_messages.append(error_message)
-                            yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
-                            # Save on error like in go
-                            if self.thread_store:
-                                await self.thread_store.save(thread)
+                            
+                            # Add any files as attachments
+                            if files:
+                                logger.debug(f"Processing {len(files)} files from tool result")
+                                for file_info in files:
+                                    logger.debug(f"Creating attachment for {file_info.get('filename')} with mime type {file_info.get('mime_type')}")
+                                    attachment = Attachment(
+                                        filename=file_info["filename"],
+                                        content=file_info["content"],
+                                        mime_type=file_info["mime_type"]
+                                    )
+                                    tool_message.attachments.append(attachment)
+                                
+                            # Add message to thread and yield update
+                            thread.add_message(tool_message)
+                            new_messages.append(tool_message)
+                            yield StreamUpdate(StreamUpdate.Type.TOOL_MESSAGE, tool_message)
+                                
+                            # Check if tool wants to break iteration
+                            tool_attributes = tool_runner.get_tool_attributes(tool_name)
+                            if tool_attributes and tool_attributes.get('type') == 'interrupt':
+                                should_break = True
+                        
+                        # Save after processing all tool calls but before next completion
+                        if self.thread_store:
+                            await self.thread_store.save(thread)
+                            
+                        if should_break:
                             break
+                    
+                    except Exception as e:
+                        error_msg = f"Tool execution failed: {str(e)}"
+                        error_message = Message(
+                            role="assistant",
+                            content=f"I encountered an error: {error_msg}. Please try again.",
+                            metrics={
+                                "timing": {
+                                    "started_at": datetime.now(UTC).isoformat(),
+                                    "ended_at": datetime.now(UTC).isoformat(),
+                                    "latency": 0
+                                }
+                            }
+                        )
+                        thread.add_message(error_message)
+                        new_messages.append(error_message)
+                        yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
+                        # Save on error like in go
+                        if self.thread_store:
+                            await self.thread_store.save(thread)
+                        break
 
                     # Save after processing all tool calls but before next completion
                     if self.thread_store:
