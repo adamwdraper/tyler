@@ -796,4 +796,109 @@ async def test_execute_tool_call_with_invalid_image_file():
     file_info = result[1][0]
     assert file_info["filename"] == "test.png"
     assert file_info["mime_type"] == "image/png"
-    assert file_info["content"] == b"invalid binary data" 
+    assert file_info["content"] == b"invalid binary data"
+
+def test_selective_tool_loading(tool_runner):
+    """Test loading specific tools from a module using the format 'module:tool1,tool2'"""
+    # Create a mock module with multiple tools
+    mock_module = MagicMock()
+    mock_module.TOOLS = [
+        {
+            'definition': {
+                'type': 'function',
+                'function': {
+                    'name': 'mock_tool_1',
+                    'description': 'First mock tool',
+                    'parameters': {}
+                }
+            },
+            'implementation': lambda: "mock result 1"
+        },
+        {
+            'definition': {
+                'type': 'function',
+                'function': {
+                    'name': 'mock_tool_2',
+                    'description': 'Second mock tool',
+                    'parameters': {}
+                }
+            },
+            'implementation': lambda: "mock result 2"
+        },
+        {
+            'definition': {
+                'type': 'function',
+                'function': {
+                    'name': 'mock_tool_3',
+                    'description': 'Third mock tool',
+                    'parameters': {}
+                }
+            },
+            'implementation': lambda: "mock result 3"
+        }
+    ]
+    
+    # Test selective loading with the new format
+    with patch('importlib.import_module', return_value=mock_module):
+        # Load only specific tools
+        loaded_tools = tool_runner.load_tool_module('test:mock_tool_1,mock_tool_3')
+        
+        # Should only have loaded 2 of the 3 tools
+        assert len(loaded_tools) == 2
+        
+        # Check that the right tools were loaded
+        tool_names = [tool['function']['name'] for tool in loaded_tools]
+        assert 'mock_tool_1' in tool_names
+        assert 'mock_tool_2' not in tool_names
+        assert 'mock_tool_3' in tool_names
+        
+        # Check tools are registered in the tool_runner
+        assert 'mock_tool_1' in tool_runner.tools
+        assert 'mock_tool_2' not in tool_runner.tools
+        assert 'mock_tool_3' in tool_runner.tools
+
+def test_selective_tool_loading_backward_compatibility(tool_runner):
+    """Test that the old format for loading all tools from a module still works"""
+    # Create a mock module with multiple tools
+    mock_module = MagicMock()
+    mock_module.TOOLS = [
+        {
+            'definition': {
+                'type': 'function',
+                'function': {
+                    'name': 'mock_tool_1',
+                    'description': 'First mock tool',
+                    'parameters': {}
+                }
+            },
+            'implementation': lambda: "mock result 1"
+        },
+        {
+            'definition': {
+                'type': 'function',
+                'function': {
+                    'name': 'mock_tool_2',
+                    'description': 'Second mock tool',
+                    'parameters': {}
+                }
+            },
+            'implementation': lambda: "mock result 2"
+        }
+    ]
+    
+    # Test standard loading with just the module name
+    with patch('importlib.import_module', return_value=mock_module):
+        # Load all tools using the old format
+        loaded_tools = tool_runner.load_tool_module('test')
+        
+        # Should have loaded all tools
+        assert len(loaded_tools) == 2
+        
+        # Check that all tools were loaded
+        tool_names = [tool['function']['name'] for tool in loaded_tools]
+        assert 'mock_tool_1' in tool_names
+        assert 'mock_tool_2' in tool_names
+        
+        # Check tools are registered in the tool_runner
+        assert 'mock_tool_1' in tool_runner.tools
+        assert 'mock_tool_2' in tool_runner.tools 

@@ -112,7 +112,7 @@ class Agent(Model):
     name: str = Field(default="Tyler")
     purpose: str = Field(default="To be a helpful assistant.")
     notes: str = Field(default="")
-    tools: List[Union[str, Dict]] = Field(default_factory=list, description="List of tools available to the agent. Can include built-in tool module names (as strings) and custom tools (as dicts with required 'definition' and 'implementation' keys, and an optional 'attributes' key for tool metadata).")
+    tools: List[Union[str, Dict]] = Field(default_factory=list, description="List of tools available to the agent. Can include built-in tool module names (as strings) and custom tools (as dicts with required 'definition' and 'implementation' keys, and an optional 'attributes' key for tool metadata). For built-in tools, you can specify specific tools to include using the format 'module:tool1,tool2'.")
     max_tool_iterations: int = Field(default=10)
     thread_store: Optional[ThreadStore] = Field(default=None, description="Thread storage implementation. Uses ThreadStore with memory backend by default.")
     agents: List["Agent"] = Field(default_factory=list, description="List of agents that this agent can delegate tasks to.")

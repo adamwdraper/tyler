@@ -247,3 +247,63 @@ async def test_agent_with_mixed_tools():
     web_tool_names = {tool['definition']['function']['name'] for tool in TOOL_MODULES['web']}
     for name in web_tool_names:
         assert name in tool_names 
+
+@pytest.mark.asyncio
+async def test_agent_with_selective_tools():
+    """Test that agent correctly loads selective tools using the 'module:tool1,tool2' format"""
+    # Verify there are multiple tools in the 'web' module to test with
+    web_tools = TOOL_MODULES['web']
+    assert len(web_tools) >= 2, "Need at least 2 web tools for this test"
+    
+    # Get the names of the first two web tools for our selective loading test
+    first_tool = web_tools[0]['definition']['function']['name']
+    second_tool = web_tools[1]['definition']['function']['name']
+    
+    # Create agent with only specific web tools
+    agent = Agent(
+        model_name="gpt-4o",
+        purpose="test",
+        tools=[f"web:{first_tool},{second_tool}"]  # Only select specific tools
+    )
+    
+    # Get all loaded tool names
+    tool_names = {tool['function']['name'] for tool in agent._processed_tools}
+    
+    # Should have loaded exactly the specified tools
+    assert len(tool_names) == 2, f"Expected 2 tools, got {len(tool_names)}: {tool_names}"
+    assert first_tool in tool_names, f"Tool {first_tool} should be loaded"
+    assert second_tool in tool_names, f"Tool {second_tool} should be loaded"
+    
+    # Verify no other web tools were loaded
+    for tool in web_tools[2:]:  # Skip the first two we explicitly included
+        tool_name = tool['definition']['function']['name']
+        assert tool_name not in tool_names, f"Tool {tool_name} should not be loaded"
+
+@pytest.mark.asyncio
+async def test_agent_with_mixed_selective_tools():
+    """Test that agent correctly processes mixed selective and full module loading"""
+    # Create agent with a mix of selective tools and full modules
+    agent = Agent(
+        model_name="gpt-4o",
+        purpose="test",
+        tools=[
+            "web",  # All web tools
+            "slack:slack-post_message"  # Only specific slack tool
+        ]
+    )
+    
+    # Get all loaded tool names
+    tool_names = {tool['function']['name'] for tool in agent._processed_tools}
+    
+    # All web tools should be loaded
+    web_tool_names = {tool['definition']['function']['name'] for tool in TOOL_MODULES['web']}
+    for name in web_tool_names:
+        assert name in tool_names, f"Web tool {name} should be loaded"
+    
+    # Only specified slack tool should be loaded
+    slack_tool_names = {tool['definition']['function']['name'] for tool in TOOL_MODULES['slack']}
+    for name in slack_tool_names:
+        if name == "slack-post_message":
+            assert name in tool_names, f"Slack tool {name} should be loaded"
+        else:
+            assert name not in tool_names, f"Slack tool {name} should not be loaded" 
