@@ -1168,6 +1168,7 @@ async def test_handle_tool_execution_empty_arguments():
         assert result["content"] == "Tool executed with empty args"
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="The _process_streaming_chunks method no longer exists in Agent class")
 async def test_process_streaming_chunks_no_chunks():
     """Test _process_streaming_chunks with no chunks"""
     agent = Agent()
@@ -1188,6 +1189,7 @@ async def test_process_streaming_chunks_no_chunks():
     assert usage == {}
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="The _process_streaming_chunks method no longer exists in Agent class")
 async def test_process_streaming_chunks_with_continuation():
     """Test _process_streaming_chunks with tool call continuation chunks"""
     agent = Agent()
