@@ -100,13 +100,19 @@ async def test_run_agent(agent_runner_instance, mock_agent):
     agent_runner_instance.register_agent(mock_agent.name, mock_agent)
     
     # Run the agent
-    response = await agent_runner_instance.run_agent(mock_agent.name, "test task")
+    response, metrics = await agent_runner_instance.run_agent(mock_agent.name, "test task")
     
     # Verify agent.go was called
     mock_agent.go.assert_called_once()
     
-    # Verify correct response
+    # Verify correct response string
     assert response == "Mock agent response"
+    
+    # Verify metrics were returned
+    assert isinstance(metrics, dict)
+    assert "agent_name" in metrics
+    assert metrics["agent_name"] == mock_agent.name
+    assert "timing" in metrics
 
 @pytest.mark.asyncio
 async def test_run_agent_with_context(agent_runner_instance, mock_agent):
@@ -116,13 +122,18 @@ async def test_run_agent_with_context(agent_runner_instance, mock_agent):
     
     # Run the agent with context
     context = {"key": "value"}
-    response = await agent_runner_instance.run_agent(mock_agent.name, "test task", context)
+    response, metrics = await agent_runner_instance.run_agent(mock_agent.name, "test task", context)
     
     # Verify agent.go was called
     mock_agent.go.assert_called_once()
     
     # Verify correct response
     assert response == "Mock agent response"
+    
+    # Verify metrics were returned
+    assert isinstance(metrics, dict)
+    assert "agent_name" in metrics
+    assert metrics["agent_name"] == mock_agent.name
     
     # Verify thread contains system message with context
     thread = mock_agent.go.call_args[0][0]
