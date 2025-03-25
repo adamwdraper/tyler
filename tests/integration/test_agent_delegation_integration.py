@@ -188,10 +188,10 @@ async def test_parallel_agent_delegation(mock_thread_store):
     async def timed_run_agent(agent_name, task, context=None):
         """Wrapper to time agent execution"""
         start_time = datetime.now(UTC)
-        result = await original_run_agent(agent_name, task, context)
+        result, metrics = await original_run_agent(agent_name, task, context)
         elapsed = (datetime.now(UTC) - start_time).total_seconds()
         execution_times.append((agent_name, elapsed))
-        return result
+        return result, metrics
     
     # Create a mock weave_call object
     mock_weave_call = types.SimpleNamespace()

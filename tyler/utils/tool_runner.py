@@ -204,9 +204,11 @@ class ToolRunner:
                         error_msg = f"Tool module '{module_name}' not found in TOOL_MODULES"
                         logger.error(error_msg)
                         raise ValueError(error_msg)
-                except ImportError as e2:
-                    error_msg = f"Failed to import TOOL_MODULES: {str(e2)}"
-                    logger.error(error_msg)
+                except Exception as e2:
+                    # This catches any exception in the fallback path, including
+                    # ImportError, AttributeError, etc.
+                    error_msg = f"Tool module '{module_name}' not found"
+                    logger.error(f"{error_msg}: {str(e2)}")
                     raise ValueError(error_msg)
             
             loaded_tools = []
@@ -255,9 +257,13 @@ class ToolRunner:
                     
             return loaded_tools
         except Exception as e:
-            error_msg = f"Error loading tool module '{module_spec}': {str(e)}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            # Only use this generic error handler if it's not one of our specific errors
+            if "Tool module" not in str(e):
+                error_msg = f"Error loading tool module '{module_spec}': {str(e)}"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            # Otherwise re-raise the specific error
+            raise
 
     def get_tool_description(self, tool_name: str) -> Optional[str]:
         """Returns the description of a tool if it exists."""

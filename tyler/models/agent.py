@@ -170,7 +170,9 @@ class Agent(Model):
                 # Define delegation handler function
                 async def delegation_handler(task, context=None, agent_name=agent.name):
                     # Properly await the coroutine
-                    return await agent_runner.run_agent(agent_name, task, context)
+                    response, metrics = await agent_runner.run_agent(agent_name, task, context)
+                    # We only return the response string, not the metrics
+                    return response
                 
                 # Create a tool definition for this agent
                 tool_def = {

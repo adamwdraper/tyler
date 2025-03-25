@@ -580,10 +580,9 @@ async def test_load_tool_module_all_imports_fail(tool_runner):
     
     with patch('importlib.import_module', side_effect=mock_import):
         # Now we expect a ValueError to be raised
-        with pytest.raises(ValueError) as excinfo:
+        with pytest.raises(ValueError, match=r".*[Tt]ool module.*test.*not found.*"):
             tool_runner.load_tool_module('test')
-        # Verify the error message contains useful information
-        assert "Tool module 'test' not found" in str(excinfo.value)
+        # We're no longer checking for exact error message wording as it's brittle
 
 @pytest.mark.asyncio
 async def test_execute_tool_call_with_tuple_return(tool_runner):
