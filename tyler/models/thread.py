@@ -43,14 +43,20 @@ class Thread(BaseModel):
             return value.replace(tzinfo=UTC)
         return value
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert thread to a dictionary suitable for JSON serialization"""
+    def model_dump(self, mode: str = "json") -> Dict[str, Any]:
+        """Convert thread to a dictionary suitable for JSON serialization
+        
+        Args:
+            mode: Serialization mode, either "json" or "python". 
+                 "json" converts datetimes to ISO strings (default).
+                 "python" keeps datetimes as datetime objects.
+        """
         return {
             "id": self.id,
             "title": self.title,
-            "messages": [msg.model_dump() for msg in self.messages],
-            "created_at": self.created_at.isoformat(),  # Will automatically include timezone
-            "updated_at": self.updated_at.isoformat(),  # Will automatically include timezone
+            "messages": [msg.model_dump(mode=mode) for msg in self.messages],
+            "created_at": self.created_at.isoformat() if mode == "json" else self.created_at,
+            "updated_at": self.updated_at.isoformat() if mode == "json" else self.updated_at,
             "attributes": self.attributes,
             "source": self.source
         }

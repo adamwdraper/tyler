@@ -125,12 +125,13 @@ class ToolRunner:
         except Exception as e:
             raise ValueError(f"Error executing tool '{tool_name}': {str(e)}")
 
-    def load_tool_module(self, module_name: str) -> List[dict]:
+    def load_tool_module(self, module_spec: str) -> List[dict]:
         """
         Load tools from a specific module in the tools directory.
         
         Args:
-            module_name: Name of the module to load (e.g., 'web', 'slack')
+            module_spec: Name of the module to load (e.g., 'web', 'slack')
+                      or in format 'module:tool1,tool2' to load specific tools
             
         Returns:
             List of loaded tool definitions
@@ -139,6 +140,16 @@ class ToolRunner:
             ValueError: If the module doesn't exist or can't be loaded
         """
         try:
+            # Parse module spec to get module name and optional tool filters
+            if ":" in module_spec:
+                module_name, tool_filters = module_spec.split(":", 1)
+                tool_filters = [f.strip() for f in tool_filters.split(",")]
+                logger.debug(f"Loading module {module_name} with tool filters: {tool_filters}")
+            else:
+                module_name = module_spec
+                tool_filters = None
+                logger.debug(f"Loading module {module_name} with no filters")
+            
             # Import the module using the full package path
             module_path = f"tyler.tools.{module_name}"
             logger.debug(f"Loading module {module_path}")
@@ -163,6 +174,12 @@ class ToolRunner:
                                 continue
                                 
                             func_name = tool['definition']['function']['name']
+                            
+                            # Skip this tool if it's not in the filter list
+                            if tool_filters and func_name not in tool_filters:
+                                logger.debug(f"Skipping tool {func_name} due to filter")
+                                continue
+                                
                             implementation = tool['implementation']
                             
                             # Register the tool with its implementation and definition
@@ -187,9 +204,11 @@ class ToolRunner:
                         error_msg = f"Tool module '{module_name}' not found in TOOL_MODULES"
                         logger.error(error_msg)
                         raise ValueError(error_msg)
-                except ImportError as e2:
-                    error_msg = f"Failed to import TOOL_MODULES: {str(e2)}"
-                    logger.error(error_msg)
+                except Exception as e2:
+                    # This catches any exception in the fallback path, including
+                    # ImportError, AttributeError, etc.
+                    error_msg = f"Tool module '{module_name}' not found"
+                    logger.error(f"{error_msg}: {str(e2)}")
                     raise ValueError(error_msg)
             
             loaded_tools = []
@@ -206,6 +225,12 @@ class ToolRunner:
                         continue
                         
                     func_name = tool['definition']['function']['name']
+                    
+                    # Skip this tool if it's not in the filter list
+                    if tool_filters and func_name not in tool_filters:
+                        logger.debug(f"Skipping tool {func_name} due to filter")
+                        continue
+                        
                     implementation = tool['implementation']
                     
                     # Register the tool with its implementation and definition
@@ -232,9 +257,13 @@ class ToolRunner:
                     
             return loaded_tools
         except Exception as e:
-            error_msg = f"Error loading tool module '{module_name}': {str(e)}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            # Only use this generic error handler if it's not one of our specific errors
+            if "Tool module" not in str(e):
+                error_msg = f"Error loading tool module '{module_spec}': {str(e)}"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            # Otherwise re-raise the specific error
+            raise
 
     def get_tool_description(self, tool_name: str) -> Optional[str]:
         """Returns the description of a tool if it exists."""

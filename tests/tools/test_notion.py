@@ -87,12 +87,18 @@ def test_get_page_content(mock_env_token):
     """Test get_page_content functionality"""
     with patch('requests.get') as mock_get:
         mock_response = MagicMock()
-        mock_response.json.return_value = MOCK_PAGE_CONTENT_RESPONSE
+        # First call - return page info
+        mock_response.json.return_value = MOCK_PAGE_RESPONSE
+        # Second call - return page content
+        mock_response.json.side_effect = [
+            MOCK_PAGE_RESPONSE,  # First call returns page info
+            MOCK_PAGE_CONTENT_RESPONSE  # Second call returns content
+        ]
         mock_get.return_value = mock_response
 
         result = get_page_content(page_id="123")
         assert "results" in result
-        mock_get.assert_called_once()
+        assert mock_get.call_count == 2  # Expect two calls
 
 def test_create_comment(mock_env_token):
     """Test create_comment functionality"""
