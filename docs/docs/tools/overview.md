@@ -12,6 +12,32 @@ Tyler comes with several built-in tool modules and supports custom tools to exte
 - [Audio Tools](./audio.md) - Tools for text-to-speech and speech-to-text conversion
 - [File Tools](./files.md) - Tools for reading, writing, and processing various file types and documents (PDFs, CSVs, JSON, etc.)
 
+## Selective Tool Loading
+
+Instead of loading all tools from a module, you can selectively load specific tools using the format `"module:tool1,tool2,tool3"`:
+
+```python
+# Load all web tools but only specific Notion tools
+agent = Agent(
+    tools=[
+        "web",                                    # Load all web tools
+        "notion:search_pages,create_page"         # Only load these specific Notion tools
+    ]
+)
+
+# Selectively load tools from multiple modules
+agent = Agent(
+    tools=[
+        "web:fetch_page,download_file",           # Only specific web tools
+        "slack:post_message",                     # Only specific Slack tool
+        "command_line:execute_command",           # Only specific command line tool
+        "notion:search_pages,create_page,update_page"  # Only specific Notion tools
+    ]
+)
+```
+
+This provides greater control over which tools are available to an agent, allowing you to create more specialized agents with precisely defined capabilities.
+
 ## MCP Tools
 
 Tyler provides first-class support for the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction), an open standard for communication between AI agents and tools. MCP allows Tyler to seamlessly integrate with a growing ecosystem of compatible tools and services.

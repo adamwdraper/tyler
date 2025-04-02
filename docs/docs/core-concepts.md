@@ -16,6 +16,8 @@ The `Agent` class is the central component of Tyler. It:
 - Supports streaming responses
 - Handles file attachments and processing
 - Integrates with Weave for monitoring
+- Supports agent delegation (parent-child pattern)
+- Allows selective loading of tools from modules
 
 ### Basic usage
 
@@ -36,6 +38,54 @@ result = await agent.go(thread)
 async for update in agent.go_stream(thread):
     if update.type == StreamUpdate.Type.CONTENT_CHUNK:
         print(update.data, end="")
+```
+
+### Agent delegation
+
+Agents can delegate tasks to other specialized agents:
+
+```python
+# Create specialized agents
+research_agent = Agent(
+    name="ResearchAgent",
+    purpose="Find information on specific topics",
+    tools=["web"]
+)
+
+writing_agent = Agent(
+    name="WritingAgent",
+    purpose="Write and format text content",
+    tools=["notion"]
+)
+
+# Create a coordinator agent that can delegate to specialized agents
+coordinator = Agent(
+    name="Coordinator",
+    purpose="Coordinate tasks among specialized agents",
+    agents=[research_agent, writing_agent]
+)
+
+# The coordinator can now use tools like "delegate_to_ResearchAgent" 
+# and "delegate_to_WritingAgent" in conversations
+```
+
+### Selective tools loading
+
+You can selectively load specific tools from modules:
+
+```python
+# Load only specific Notion tools
+agent = Agent(
+    tools=["notion:search_pages,create_page"]  # Only load these specific tools
+)
+
+# Mix selective and full module loading
+agent = Agent(
+    tools=[
+        "web",  # Load all web tools
+        "notion:search_pages,create_page"  # Only specific Notion tools
+    ]
+)
 ```
 
 ### Key methods
