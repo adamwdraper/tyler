@@ -177,14 +177,20 @@ class Message(BaseModel):
                 
         return serialized_calls
 
-    def model_dump(self) -> Dict[str, Any]:
-        """Convert message to a dictionary suitable for JSON serialization"""
+    def model_dump(self, mode: str = "json") -> Dict[str, Any]:
+        """Convert message to a dictionary suitable for JSON serialization
+        
+        Args:
+            mode: Serialization mode, either "json" or "python". 
+                 "json" converts datetimes to ISO strings (default).
+                 "python" keeps datetimes as datetime objects.
+        """
         message_dict = {
             "id": self.id,
             "role": self.role,
             "sequence": self.sequence,  # Include sequence in serialization
             "content": self.content,
-            "timestamp": self.timestamp.isoformat(),
+            "timestamp": self.timestamp.isoformat() if mode == "json" else self.timestamp,
             "source": self.source,
             "metrics": self.metrics
         }
@@ -205,7 +211,7 @@ class Message(BaseModel):
             message_dict["attachments"] = []
             for attachment in self.attachments:
                 # Ensure content is properly serialized
-                attachment_dict = {
+                attachment_dict = attachment.model_dump(mode=mode) if hasattr(attachment, 'model_dump') else {
                     "filename": attachment.filename,
                     "mime_type": attachment.mime_type,
                     "file_id": attachment.file_id,
@@ -213,6 +219,10 @@ class Message(BaseModel):
                     "storage_backend": attachment.storage_backend,
                     "status": attachment.status
                 }
+                
+                # Remove content field if present to avoid large data serialization
+                if "content" in attachment_dict:
+                    del attachment_dict["content"]
                 
                 # Add processed content if available
                 if attachment.attributes:

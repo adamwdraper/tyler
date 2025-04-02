@@ -150,15 +150,177 @@ class NotionClient:
         return self._make_request("PATCH", f"blocks/{block_id}", data)
 
     def extract_clean_content(self, blocks: List[Dict]) -> Dict:
-        """Extract clean content from blocks"""
+        """Extract clean content from blocks with preserved markdown formatting and links"""
         clean_text = []
         for block in blocks:
-            if block["type"] == "paragraph":
-                text = block["paragraph"].get("text", [])
-                for t in text:
-                    if "content" in t.get("text", {}):
-                        clean_text.append(t["text"]["content"])
-        return {"content": "\n".join(clean_text)}
+            # Skip blocks without a type or with unsupported types
+            if "type" not in block or block["type"] == "unsupported":
+                continue
+                
+            block_type = block["type"]
+            type_data = block.get(block_type, {})
+            
+            # Handle most common block types
+            if block_type in ["paragraph", "heading_1", "heading_2", "heading_3", 
+                             "bulleted_list_item", "numbered_list_item", "toggle", 
+                             "quote", "callout", "to_do"]:
+                # Rich text is in rich_text field per Notion API docs
+                rich_text = type_data.get("rich_text", [])
+                if rich_text:
+                    # Build formatted text with preserved links
+                    formatted_segments = []
+                    for rt in rich_text:
+                        text = rt.get("plain_text", "")
+                        if not text:
+                            continue
+                            
+                        # Apply text formatting
+                        if rt.get("annotations", {}).get("bold", False):
+                            text = f"**{text}**"
+                        if rt.get("annotations", {}).get("italic", False):
+                            text = f"*{text}*"
+                        if rt.get("annotations", {}).get("strikethrough", False):
+                            text = f"~~{text}~~"
+                        if rt.get("annotations", {}).get("code", False):
+                            text = f"`{text}`"
+                            
+                        # Preserve hyperlinks as markdown
+                        if rt.get("href"):
+                            text = f"[{text}]({rt.get('href')})"
+                            
+                        formatted_segments.append(text)
+                        
+                    text_content = "".join(formatted_segments)
+                    
+                    if text_content:
+                        # Add appropriate prefix based on block type
+                        if block_type.startswith("heading_"):
+                            level = block_type[-1]
+                            clean_text.append(f"{'#' * int(level)} {text_content}")
+                        elif block_type == "bulleted_list_item":
+                            clean_text.append(f"* {text_content}")
+                        elif block_type == "numbered_list_item":
+                            clean_text.append(f"1. {text_content}")
+                        elif block_type == "to_do":
+                            checkbox = "- [x]" if type_data.get("checked", False) else "- [ ]"
+                            clean_text.append(f"{checkbox} {text_content}")
+                        elif block_type == "quote":
+                            clean_text.append(f"> {text_content}")
+                        elif block_type == "toggle":
+                            # Mark toggle headers with a special prefix for visibility
+                            clean_text.append(f"▶ {text_content}")
+                        else:
+                            clean_text.append(text_content)
+            
+            # Handle tables
+            elif block_type == "table":
+                has_column_header = type_data.get("has_column_header", False)
+                has_row_header = type_data.get("has_row_header", False)
+                
+                # Process table rows if they exist
+                if "children" in block:
+                    table_rows = []
+                    max_col_widths = []
+                    
+                    # First pass: collect all rows and determine column widths
+                    for row_block in block["children"]:
+                        if row_block.get("type") == "table_row":
+                            row_data = row_block.get("table_row", {})
+                            cells = row_data.get("cells", [])
+                            row_content = []
+                            
+                            # Process each cell
+                            for cell_idx, cell in enumerate(cells):
+                                # Each cell is an array of rich text objects
+                                cell_text = ""
+                                for rt in cell:
+                                    text = rt.get("plain_text", "")
+                                    if rt.get("annotations", {}).get("bold", False):
+                                        text = f"**{text}**"
+                                    if rt.get("annotations", {}).get("italic", False):
+                                        text = f"*{text}*"
+                                    if rt.get("href"):
+                                        text = f"[{text}]({rt.get('href')})"
+                                    cell_text += text
+                                
+                                row_content.append(cell_text)
+                                
+                                # Update max column width
+                                if len(max_col_widths) <= cell_idx:
+                                    max_col_widths.append(len(cell_text))
+                                else:
+                                    max_col_widths[cell_idx] = max(max_col_widths[cell_idx], len(cell_text))
+                            
+                            table_rows.append(row_content)
+                    
+                    # Second pass: format as a nice text table
+                    if table_rows:
+                        # Add header separator if needed
+                        formatted_table = []
+                        
+                        # Format each row
+                        for row_idx, row in enumerate(table_rows):
+                            row_str = "| "
+                            for col_idx, cell in enumerate(row):
+                                # Pad cell content to match column width
+                                if col_idx < len(max_col_widths):
+                                    row_str += cell.ljust(max_col_widths[col_idx]) + " | "
+                                else:
+                                    row_str += cell + " | "
+                            
+                            formatted_table.append(row_str)
+                            
+                            # Add header separator after first row if it's a header
+                            if row_idx == 0 and has_column_header:
+                                separator = "| "
+                                for col_idx, width in enumerate(max_col_widths):
+                                    separator += "-" * width + " | "
+                                formatted_table.append(separator)
+                        
+                        # Add the formatted table to output
+                        clean_text.append("\n".join(formatted_table))
+            
+            # Handle child page references
+            elif block_type == "child_page":
+                title = type_data.get("title", "")
+                if title:
+                    clean_text.append(f"## Page: {title}")
+                    
+            # Handle URL links
+            elif block_type == "link_to_page":
+                if "page_id" in type_data:
+                    page_id = type_data["page_id"]
+                    clean_text.append(f"[Linked Page]({page_id})")
+                    
+            # Handle bookmarks
+            elif block_type == "bookmark":
+                url = type_data.get("url", "")
+                caption = ""
+                caption_texts = type_data.get("caption", [])
+                if caption_texts:
+                    caption = " ".join([t.get("plain_text", "") for t in caption_texts])
+                
+                if url:
+                    if caption:
+                        clean_text.append(f"[{caption}]({url})")
+                    else:
+                        clean_text.append(f"[Bookmark]({url})")
+            
+            # Always check for children, whether or not has_children is true
+            # This is important for toggle blocks which might have children in the API response
+            if "children" in block and block_type != "table":  # Skip for tables as we process children differently
+                child_content = self.extract_clean_content(block["children"])
+                child_text = child_content.get("content", "")
+                if child_text:
+                    # Indent child content but use a more visible indentation for toggle content
+                    if block_type == "toggle":
+                        # Use a different indentation marker for toggle content
+                        indented_text = "\n".join([f"  ▷ {line}" for line in child_text.split("\n")])
+                    else:
+                        indented_text = "\n".join([f"    {line}" for line in child_text.split("\n")])
+                    clean_text.append(indented_text)
+        
+        return {"content": "\n\n".join(clean_text)}
 
 @weave.op(name="notion-search")
 def search(query: Optional[str] = None, filter: Optional[Dict] = None,
@@ -178,10 +340,40 @@ def get_page_content(page_id: str, start_cursor: Optional[str] = None,
                     page_size: Optional[int] = None, clean_content: bool = False) -> Dict:
     """Get page content"""
     client = create_notion_client()
+    
+    # First get the page metadata to get the URL
+    page_info = client.get_page(page_id)
+    page_url = page_info.get("url", "")
+    page_title = ""
+    
+    # Extract page title from properties
+    if "properties" in page_info and "title" in page_info["properties"]:
+        title_prop = page_info["properties"]["title"]
+        if "title" in title_prop and title_prop["title"]:
+            page_title = "".join([t.get("plain_text", "") for t in title_prop["title"]])
+    
+    # Also try to get title from Page property if it exists
+    if not page_title and "properties" in page_info and "Page" in page_info["properties"]:
+        page_prop = page_info["properties"]["Page"]
+        if "title" in page_prop and page_prop["title"]:
+            page_title = "".join([t.get("plain_text", "") for t in page_prop["title"]])
+    
+    # Get the page content
     blocks = client._fetch_all_children(page_id, start_cursor=start_cursor, page_size=page_size)
+    
     if clean_content:
-        return client.extract_clean_content(blocks)
-    return {"object": "list", "results": blocks}
+        content_result = client.extract_clean_content(blocks)
+        # Add page metadata to the result
+        content_result["page_url"] = page_url
+        content_result["page_title"] = page_title
+        return content_result
+    
+    return {
+        "object": "list", 
+        "results": blocks,
+        "page_url": page_url,
+        "page_title": page_title
+    }
 
 @weave.op(name="notion-create_comment")
 def create_comment(rich_text: List[Dict], page_id: Optional[str] = None,
@@ -217,13 +409,13 @@ TOOLS = [
             "type": "function",
             "function": {
                 "name": "notion-search",
-                "description": "Searches all titles of pages and databases in Notion that have been shared with the integration. Can search by title or filter to only pages/databases. When constructing queries: • Include relevant keywords and filters (e.g., by title or tags) to precisely target the desired content. • Keep queries concise and leverage pagination to optimize performance. • Refine or expand filters and query terms over time for incremental improvements.",
+                "description": "Searches all titles of pages and databases in Notion that have been shared with the integration. Can search by title or filter to only pages/databases. When constructing queries: • Query around general subject matter. Use keywords that would likely be in the title of a page or database that contains relevant information. • Keep queries concise and leverage pagination to optimize performance. • Refine or expand filters and query terms over time for incremental improvements.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query to find in page/database titles. Query around subject matter such that it likely will be in the title. Optional - if not provided returns all pages/databases."
+                            "description": "The search query to find in page/database titles. Query around subject matter such that it likely will be in the title of a page or database."
                         },
                         "filter": {
                             "type": "object",

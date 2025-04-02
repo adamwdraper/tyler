@@ -20,8 +20,14 @@ class Attachment(BaseModel):
     storage_backend: Optional[str] = None  # Storage backend type
     status: Literal["pending", "stored", "failed"] = "pending"
 
-    def model_dump(self) -> Dict[str, Any]:
-        """Convert attachment to a dictionary suitable for JSON serialization"""
+    def model_dump(self, mode: str = "json") -> Dict[str, Any]:
+        """Convert attachment to a dictionary suitable for JSON serialization
+        
+        Args:
+            mode: Serialization mode, either "json" or "python". 
+                 "json" converts datetimes to ISO strings (default).
+                 "python" keeps datetimes as datetime objects.
+        """
         data = {
             "filename": self.filename,
             "mime_type": self.mime_type,

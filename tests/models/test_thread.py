@@ -46,8 +46,8 @@ def test_add_message():
 
 def test_thread_serialization(sample_thread):
     """Test thread serialization to/from dict"""
-    # Test model_dump()
-    data = sample_thread.model_dump()
+    # Test model_dump() with JSON mode (default)
+    data = sample_thread.model_dump(mode="json")
     assert data["id"] == "test-thread"
     assert data["title"] == "Test Thread"
     assert data["attributes"] == {"category": "test"}
@@ -56,11 +56,16 @@ def test_thread_serialization(sample_thread):
     assert data["messages"][0]["role"] == "system"
     assert data["messages"][1]["role"] == "user"
     assert data["messages"][2]["role"] == "assistant"
-    assert isinstance(data["created_at"], datetime)
-    assert isinstance(data["updated_at"], datetime)
+    assert isinstance(data["created_at"], str)  # Expect ISO-formatted string
+    assert isinstance(data["updated_at"], str)  # Expect ISO-formatted string
     
-    # Test model_validate()
-    new_thread = Thread.model_validate(data)
+    # Test model_dump() with Python mode
+    data_with_dates = sample_thread.model_dump(mode="python")
+    assert isinstance(data_with_dates["created_at"], datetime)  # Expect datetime objects
+    assert isinstance(data_with_dates["updated_at"], datetime)  # Expect datetime objects
+    
+    # Test model_validate() with datetime objects
+    new_thread = Thread.model_validate(data_with_dates)
     assert new_thread.id == sample_thread.id
     assert new_thread.title == sample_thread.title
     assert new_thread.attributes == sample_thread.attributes

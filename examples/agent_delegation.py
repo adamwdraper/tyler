@@ -26,7 +26,6 @@ try:
 except Exception as e:
     logger.warning(f"Failed to initialize weave tracing: {e}. Continuing without weave.")
 
-
 async def main():
     # Create specialized agents
     research_agent = Agent(

@@ -135,7 +135,7 @@ thread.ensure_system_prompt("You are a helpful assistant")
 thread.clear_messages()
 
 # Convert to dict for storage
-thread_data = thread.to_dict()
+thread_data = thread.model_dump()
 ```
 
 ## Message
