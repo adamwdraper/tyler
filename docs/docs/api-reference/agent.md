@@ -19,7 +19,8 @@ agent = Agent(
     notes: str = "",
     tools: List[Union[str, Dict]] = [],
     max_tool_iterations: int = 10,
-    thread_store: Optional[ThreadStore] = None
+    thread_store: Optional[ThreadStore] = None,
+    agents: List["Agent"] = []
 )
 ```
 
@@ -35,6 +36,7 @@ agent = Agent(
 | `tools` | List[Union[str, Dict]] | No | [] | List of tools (strings for built-in modules or dicts for custom tools) |
 | `max_tool_iterations` | int | No | 10 | Maximum number of tool iterations |
 | `thread_store` | Optional[ThreadStore] | No | ThreadStore() | Thread storage implementation |
+| `agents` | List[Agent] | No | [] | List of agents that this agent can delegate tasks to |
 
 ## Methods
 
@@ -306,11 +308,25 @@ except Exception as e:
 ```python
 agent = Agent(
     tools=[
-        "web",      # Use built-in web tools
-        "slack",    # Use built-in Slack tools
-        "notion",   # Use built-in Notion tools
-        "image",    # Use built-in image tools
-        "command_line"  # Use built-in command line tools
+        "web",      # Use all built-in web tools
+        "slack",    # Use all built-in Slack tools
+        "notion",   # Use all built-in Notion tools
+        "image",    # Use all built-in image tools
+        "command_line"  # Use all built-in command line tools
+    ]
+)
+```
+
+### Selective Tool Loading
+
+You can selectively load specific tools from modules using the format `"module:tool1,tool2"`:
+
+```python
+agent = Agent(
+    tools=[
+        "web",  # Use all web tools
+        "notion:search_pages,create_page",  # Only use specific Notion tools
+        "slack:post_message"  # Only use the post_message tool from Slack
     ]
 )
 ```
@@ -339,6 +355,36 @@ custom_tool = {
 }
 
 agent = Agent(tools=[custom_tool])
+```
+
+## Agent Delegation
+
+You can create a parent-child relationship between agents, allowing one agent to delegate tasks to specialized agents:
+
+```python
+# Create specialized agents
+research_agent = Agent(
+    name="ResearchAgent",
+    purpose="Find information on specific topics",
+    tools=["web"]
+)
+
+code_agent = Agent(
+    name="CodeAgent",
+    purpose="Write and analyze code",
+    tools=["command_line"]
+)
+
+# Create coordinator agent with delegation capabilities
+coordinator = Agent(
+    name="Coordinator",
+    purpose="Coordinate tasks between specialized agents",
+    agents=[research_agent, code_agent]
+)
+
+# The coordinator can now use delegation tools automatically
+# These tools are named "delegate_to_ResearchAgent" and "delegate_to_CodeAgent"
+# and allow the coordinator to send tasks to specialized agents
 ```
 
 ## Best Practices
