@@ -80,10 +80,10 @@ Does not modify any existing system messages.
 Return messages in the format expected by chat completion APIs.
 
 ```python
-def get_messages_for_chat_completion(self) -> List[Dict[str, Any]]
+async def get_messages_for_chat_completion(self, file_store: Optional[FileStore] = None) -> List[Dict[str, Any]]
 ```
 
-Returns messages formatted for LLM completion, including proper sequencing and any file references.
+Returns messages formatted for LLM completion, including proper sequencing and any file references. If messages have attachments, file_store is required to access their content.
 
 ### clear_messages
 

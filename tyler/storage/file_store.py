@@ -38,7 +38,30 @@ class FileTooLargeError(FileStoreError):
     pass
 
 class FileStore:
-    """File storage implementation"""
+    """
+    File storage implementation
+    
+    The recommended way to create a FileStore is using the factory method:
+    
+    ```python
+    # Create with default settings
+    store = await FileStore.create()
+    
+    # Specify custom path
+    store = await FileStore.create("/path/to/files")
+    
+    # Customize all settings
+    store = await FileStore.create(
+        base_path="/path/to/files",
+        max_file_size=100*1024*1024,  # 100MB
+        allowed_mime_types={"image/jpeg", "image/png"},
+        max_storage_size=10*1024*1024*1024  # 10GB
+    )
+    ```
+    
+    The factory method validates storage configuration immediately, allowing
+    early detection of storage access issues.
+    """
 
     # Default configuration
     DEFAULT_MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
@@ -74,9 +97,59 @@ class FileStore:
         'audio/x-m4a',
     }
     
+    @classmethod
+    async def create(cls, base_path: Optional[str] = None, max_file_size: Optional[int] = None, 
+                    allowed_mime_types: Optional[Set[str]] = None, max_storage_size: Optional[int] = None) -> 'FileStore':
+        """
+        Factory method to create and validate a FileStore instance.
+        
+        This method validates storage configuration immediately, allowing
+        early detection of storage access issues.
+        
+        Args:
+            base_path: Base directory for file storage
+            max_file_size: Maximum allowed file size in bytes
+            allowed_mime_types: Set of allowed MIME types
+            max_storage_size: Maximum total storage size in bytes
+            
+        Returns:
+            Initialized FileStore instance
+            
+        Raises:
+            FileStoreError: If storage directory cannot be created or accessed
+        """
+        # Create instance 
+        store = cls(base_path, max_file_size, allowed_mime_types, max_storage_size)
+        
+        try:
+            # Validate storage by writing and reading a test file
+            test_id = str(uuid.uuid4())
+            test_path = store._get_file_path(test_id)
+            test_path.parent.mkdir(parents=True, exist_ok=True)
+            test_content = b"storage validation"
+            test_path.write_bytes(test_content)
+            read_content = test_path.read_bytes()
+            test_path.unlink()  # Clean up
+            
+            # Ensure content matches what we wrote
+            if read_content != test_content:
+                raise FileStoreError("Storage validation failed: content mismatch")
+                
+            # Check that we can create storage stats
+            storage_size = await store.get_storage_size()
+            logger.debug(f"Storage validation successful. Current storage size: {storage_size} bytes")
+            
+            return store
+        except Exception as e:
+            logger.error(f"Storage validation failed: {e}")
+            raise FileStoreError(f"Storage validation failed: {e}")
+    
     def __init__(self, base_path: Optional[str] = None, max_file_size: Optional[int] = None, 
                  allowed_mime_types: Optional[Set[str]] = None, max_storage_size: Optional[int] = None):
         """Initialize file store
+        
+        For production use, prefer the async factory method:
+        `store = await FileStore.create(base_path, ...)`
         
         Args:
             base_path: Base directory for file storage. If not provided,

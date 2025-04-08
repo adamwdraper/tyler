@@ -619,17 +619,19 @@ Tyler supports multiple storage backends:
 Thread storage handles conversation persistence and retrieval through a unified `ThreadStore` class with pluggable backends:
 
 ```python
-# In-memory storage (default)
+# Factory pattern for thread store creation
 from tyler.database.thread_store import ThreadStore
-store = ThreadStore()  # Uses memory backend by default
+
+# In-memory storage
+store = await ThreadStore.create()  # Connects immediately, validates configuration
 
 # PostgreSQL storage
-store = ThreadStore("postgresql+asyncpg://user:pass@localhost/dbname")
-await store.initialize()  # Required before use
+store = await ThreadStore.create("postgresql+asyncpg://user:pass@localhost/dbname")
+# Connects immediately, validates credentials
 
 # SQLite storage
-store = ThreadStore("sqlite+aiosqlite:///path/to/db.sqlite")
-await store.initialize()
+store = await ThreadStore.create("sqlite+aiosqlite:///path/to/db.sqlite")
+# Connects immediately, validates file access
 
 # Use with agent
 agent = Agent(thread_store=store)
@@ -653,6 +655,7 @@ Key characteristics:
 - Production-ready with PostgreSQL
 - Development-friendly with SQLite
 - Automatic schema management
+- Connection validation at startup with factory pattern
 
 Configuration options:
 ```python
@@ -665,6 +668,14 @@ TYLER_DB_MAX_OVERFLOW=20    # Max additional connections
 
 Common operations:
 ```python
+# Connect to database at startup
+try:
+    store = await ThreadStore.create("postgresql+asyncpg://user:pass@localhost/dbname")
+    print("Database connection successful")
+except Exception as e:
+    print(f"Database connection failed: {e}")
+    # Handle error (exit application, use fallback, etc.)
+
 # Save thread and changes
 thread = Thread()
 await store.save(thread)
@@ -690,23 +701,77 @@ threads = await store.find_by_source(
 
 ### File Storage
 
-```python
-# Configure via environment
-TYLER_FILE_STORAGE_TYPE=local
-TYLER_FILE_STORAGE_PATH=/path/to/files
+Tyler provides a unified `FileStore` class for file storage and retrieval. Files are automatically stored and processed when attached to messages.
 
-# Attachments are automatically processed and stored when saving a thread
+```python
+from tyler.storage.file_store import FileStore
+
+# Create a file store instance with factory pattern (validates settings immediately)
+file_store = await FileStore.create(
+    base_path="/path/to/files",
+    max_file_size=100 * 1024 * 1024,  # 100MB
+    max_storage_size=10 * 1024 * 1024 * 1024  # 10GB
+)
+
+# Or use default settings from environment variables
+file_store = await FileStore.create()
+
+# Pass file_store to Agent
+agent = Agent(
+    model_name="gpt-4o",
+    purpose="To help with tasks",
+    thread_store=thread_store,
+    file_store=file_store  # Explicitly pass file_store instance
+)
+
+# When handling attachments
 message = Message(role="user", content="Here's a file")
 message.add_attachment(file_bytes, filename="document.pdf")
 thread.add_message(message)
 
-# Simply save the thread - attachments are processed automatically
-await thread_store.save(thread)
+# Pass file_store when saving to process attachments
+await thread_store.save(thread, file_store=file_store)
 
 # Access attachment information after storage
 for attachment in message.attachments:
     if attachment.status == "stored":
         print(f"File stored at: {attachment.storage_path}")
+```
+
+#### Key characteristics:
+- Local file system storage with sharded directory structure
+- Automatic file validation and MIME type detection
+- Configurable size limits and allowed file types
+- Storage validation at startup with factory pattern
+- Built-in file processing for common formats
+
+#### Configuration options:
+```python
+# Environment variables
+TYLER_FILE_STORAGE_PATH=/path/to/files     # Base storage directory
+TYLER_MAX_FILE_SIZE=52428800               # 50MB default maximum file size
+TYLER_MAX_STORAGE_SIZE=5368709120          # 5GB default maximum storage size
+TYLER_ALLOWED_MIME_TYPES=image/jpeg,application/pdf  # Allowed MIME types
+```
+
+#### Common operations:
+```python
+# Use file_store instance directly
+metadata = await file_store.save(
+    content=pdf_bytes,
+    filename="document.pdf",
+    mime_type="application/pdf"
+)
+
+# Access file by ID and storage path
+content = await file_store.get(metadata["id"], metadata["storage_path"])
+
+# Delete file
+await file_store.delete(metadata["id"], metadata["storage_path"])
+
+# Health check
+health = await file_store.check_health()
+print(f"Storage usage: {health['total_size']} bytes")
 ```
 
 ## Streaming

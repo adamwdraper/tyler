@@ -140,14 +140,29 @@ async def test_go_max_recursion(agent, mock_thread_store):
     """Test go() with maximum iteration count reached"""
     thread = Thread(id="test-conv", title="Test Thread")
     mock_thread_store.get.return_value = thread
-    agent._iteration_count = agent.max_tool_iterations
     
-    result_thread, new_messages = await agent.go("test-conv")
-    
-    assert len(new_messages) == 1
-    assert new_messages[0].role == "assistant"
-    assert new_messages[0].content == "Maximum tool iteration count reached. Stopping further tool calls."
-    mock_thread_store.save.assert_called_once_with(result_thread)
+    # Instead of setting iteration count directly, mock the step method to simulate
+    # reaching max iterations and force a call to _handle_max_iterations
+    with patch.object(agent, 'step', new_callable=AsyncMock) as mock_step:
+        # Create a side effect that will increment the iteration count past the max
+        def side_effect(*args, **kwargs):
+            agent._iteration_count = agent.max_tool_iterations
+            # Return an empty response with no message content to avoid adding extra messages
+            mock_response = MagicMock()
+            mock_response.choices = [MagicMock()]
+            # Set content to None so no message is added from the step response
+            mock_response.choices[0].message.content = None
+            mock_response.choices[0].message.tool_calls = None
+            return mock_response, {}
+        
+        mock_step.side_effect = side_effect
+        
+        result_thread, new_messages = await agent.go("test-conv")
+        
+        assert len(new_messages) == 1
+        assert new_messages[0].role == "assistant"
+        assert new_messages[0].content == "Maximum tool iteration count reached. Stopping further tool calls."
+        mock_thread_store.save.assert_called_once_with(result_thread)
 
 @pytest.mark.asyncio
 async def test_go_no_tool_calls(agent, mock_thread_store, mock_prompt, mock_litellm):

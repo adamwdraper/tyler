@@ -2,6 +2,7 @@ from typing import List, Dict, Optional, Literal, Any
 from datetime import datetime, UTC
 from pydantic import BaseModel, Field, field_validator
 from tyler.models.message import Message
+from tyler.storage.file_store import FileStore
 from litellm import completion
 import uuid
 import weave
@@ -85,9 +86,13 @@ class Thread(BaseModel):
         
         self.updated_at = datetime.now(UTC)
 
-    def get_messages_for_chat_completion(self) -> List[Dict[str, Any]]:
-        """Return messages in the format expected by chat completion APIs"""
-        return [msg.to_chat_completion_message() for msg in self.messages]
+    async def get_messages_for_chat_completion(self, file_store: Optional[FileStore] = None) -> List[Dict[str, Any]]:
+        """Return messages in the format expected by chat completion APIs
+        
+        Args:
+            file_store: Optional FileStore instance to pass to messages for file URL access
+        """
+        return [msg.to_chat_completion_message(file_store=file_store) for msg in self.messages]
 
     def clear_messages(self) -> None:
         """Clear all messages from the thread"""

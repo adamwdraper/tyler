@@ -3,7 +3,6 @@ from typing import Optional, Dict, Any, List
 from tyler.models.thread import Thread
 from tyler.utils.logging import get_logger
 from .storage_backend import MemoryBackend, SQLBackend
-import os
 
 logger = get_logger(__name__)
 
@@ -14,32 +13,25 @@ class ThreadStore:
     
     Key characteristics:
     - Unified interface for all storage types
-    - Automatic backend selection based on configuration
-    - Memory backend for development/testing
+    - Memory backend for development/testing (default)
     - SQLite for local persistence
     - PostgreSQL for production
     - Built-in connection pooling for SQLBackend
     
     Usage:
-        # Memory storage (default when no environment variables or URL provided)
-        store = ThreadStore()
+        # RECOMMENDED: Factory pattern for immediate connection validation
+        from tyler.database.thread_store import ThreadStore
+        store = await ThreadStore.create("postgresql+asyncpg://user:pass@localhost/dbname")
         
-        # Environment variable configuration (if TYLER_DB_TYPE is set)
-        # Set TYLER_DB_TYPE to 'postgresql' or 'sqlite'
-        # For PostgreSQL, also set TYLER_DB_HOST, TYLER_DB_PORT, TYLER_DB_NAME, TYLER_DB_USER, TYLER_DB_PASSWORD
-        # For SQLite, also set TYLER_DB_PATH
-        store = ThreadStore()
+        # Or for in-memory storage:
+        store = await ThreadStore.create()  # Uses memory backend
         
-        # Explicit SQLite configuration
-        store = ThreadStore(database_url="sqlite+aiosqlite:///path/to/db.sqlite")
+        # For backward compatibility, you can also use the direct constructor
+        # which will connect on first operation:
+        store = ThreadStore("postgresql+asyncpg://user:pass@localhost/dbname")
         
-        # Explicit PostgreSQL configuration
-        store = ThreadStore(database_url="postgresql+asyncpg://user:pass@localhost/dbname")
-        
-        # Thread operations
-        thread = Thread()
-        await store.save(thread)
-        result = await store.get(thread.id)
+        # Use with agent
+        agent = Agent(thread_store=store)
         
     Connection pooling settings can be configured via environment variables:
         - TYLER_DB_POOL_SIZE: Max number of connections to keep open (default: 5)
@@ -48,67 +40,59 @@ class ThreadStore:
         - TYLER_DB_POOL_RECYCLE: Seconds after which a connection is recycled (default: 300)
     """
     
-    def __init__(self, database_url: Optional[str] = None):
+    def __init__(self, database_url = None):
         """
         Initialize thread store with optional database URL.
-        If no URL is provided, checks environment variables for configuration.
-        If no environment variables are set, uses in-memory storage.
+        If no URL is provided, uses in-memory storage by default.
+        This constructor doesn't establish database connections - they happen on first use.
+        
+        For immediate connection validation, use the async factory method:
+        `store = await ThreadStore.create(database_url)`
         
         Args:
             database_url: SQLAlchemy async database URL. Examples:
                 - "postgresql+asyncpg://user:pass@localhost/dbname"
                 - "sqlite+aiosqlite:///path/to/db.sqlite"
-                - None to use environment variables or in-memory storage
-                
-        Raises:
-            ValueError: If TYLER_DB_TYPE is set but required environment variables are missing
+                - None for in-memory storage
         """
         if database_url is None:
-            # Check for environment variables
-            db_type = os.getenv("TYLER_DB_TYPE")
-            if db_type in ["postgresql", "postgres"]:
-                # Validate required PostgreSQL environment variables
-                required_vars = ["TYLER_DB_USER", "TYLER_DB_PASSWORD", "TYLER_DB_HOST", "TYLER_DB_PORT", "TYLER_DB_NAME"]
-                missing_vars = [var for var in required_vars if not os.getenv(var)]
-                
-                if missing_vars:
-                    error_msg = f"PostgreSQL database type specified but missing required environment variables: {', '.join(missing_vars)}"
-                    logger.error(error_msg)
-                    raise ValueError(error_msg)
-                
-                # Construct PostgreSQL URL from environment variables
-                db_user = os.getenv("TYLER_DB_USER")
-                db_password = os.getenv("TYLER_DB_PASSWORD")
-                db_host = os.getenv("TYLER_DB_HOST")
-                db_port = os.getenv("TYLER_DB_PORT")
-                db_name = os.getenv("TYLER_DB_NAME")
-                
-                database_url = f"postgresql+asyncpg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-                logger.info(f"Using PostgreSQL database from environment variables: {db_host}:{db_port}/{db_name}")
-                self._backend = SQLBackend(database_url)
-            elif db_type == "sqlite":
-                # Validate required SQLite environment variables
-                if not os.getenv("TYLER_DB_PATH"):
-                    error_msg = "SQLite database type specified but TYLER_DB_PATH environment variable is missing"
-                    logger.error(error_msg)
-                    raise ValueError(error_msg)
-                
-                # Construct SQLite URL
-                db_path = os.getenv("TYLER_DB_PATH")
-                database_url = f"sqlite+aiosqlite:///{db_path}"
-                logger.info(f"Using SQLite database from environment variables: {db_path}")
-                self._backend = SQLBackend(database_url)
-            else:
-                # Default to in-memory storage
-                logger.info("No database configuration found. Using in-memory storage.")
-                self._backend = MemoryBackend()
+            # Default to in-memory storage
+            logger.info("No database URL provided. Using in-memory storage.")
+            self._backend = MemoryBackend()
         else:
             # Use SQLBackend with the provided URL
-            logger.info(f"Using explicitly provided database URL: {database_url}")
+            logger.info(f"Using database URL: {database_url}")
             self._backend = SQLBackend(database_url)
         
         # Add initialization flag
         self._initialized = False
+    
+    @classmethod
+    async def create(cls, database_url = None):
+        """
+        Factory method to create and initialize a ThreadStore.
+        This method connects to the database immediately, allowing early validation
+        of connection parameters.
+        
+        Args:
+            database_url: SQLAlchemy async database URL. Examples:
+                - "postgresql+asyncpg://user:pass@localhost/dbname"
+                - "sqlite+aiosqlite:///path/to/db.sqlite"
+                - None for in-memory storage
+                
+        Returns:
+            Initialized ThreadStore instance
+            
+        Raises:
+            Exception: If database connection fails
+        """
+        # Create instance
+        store = cls(database_url)
+        
+        # Initialize immediately
+        await store.initialize()
+        
+        return store
     
     async def _ensure_initialized(self) -> None:
         """Ensure the storage backend is initialized."""
@@ -172,7 +156,7 @@ try:
     class SQLAlchemyThreadStore(ThreadStore):
         """PostgreSQL-based thread storage for production use."""
         
-        def __init__(self, database_url: str):
+        def __init__(self, database_url):
             if not database_url.startswith('postgresql+asyncpg://'):
                 database_url = database_url.replace('postgresql://', 'postgresql+asyncpg://')
             super().__init__(database_url)

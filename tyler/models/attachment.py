@@ -5,6 +5,7 @@ import io
 import magic
 from tyler.utils.logging import get_logger
 from pathlib import Path
+from tyler.storage.file_store import FileStore
 
 # Get configured logger
 logger = get_logger(__name__)
@@ -48,19 +49,22 @@ class Attachment(BaseModel):
                 
         return data
         
-    async def get_content_bytes(self) -> bytes:
+    async def get_content_bytes(self, file_store: Optional[FileStore] = None) -> bytes:
         """Get the content as bytes, converting from base64 if necessary
         
         If file_id is present, retrieves content from file storage.
         Otherwise falls back to content field.
-        """
-        from tyler.storage import get_file_store
         
+        Args:
+            file_store: Optional FileStore instance to use for retrieving file content.
+                       If not provided, the content must be available in the attachment.
+        """
         logger.debug(f"Getting content bytes for {self.filename}")
         
         if self.file_id:
             logger.debug(f"Retrieving content from file store for file_id: {self.file_id}")
-            file_store = get_file_store()
+            if file_store is None:
+                raise ValueError("FileStore instance required to retrieve content for file_id")
             return await file_store.get(self.file_id, storage_path=self.storage_path)
             
         if isinstance(self.content, bytes):
@@ -110,8 +114,13 @@ class Attachment(BaseModel):
                 logger.error(f"Failed to construct URL for attachment: {e}")
                 self.attributes["error"] = f"Failed to construct URL: {str(e)}"
 
-    async def process_and_store(self, force: bool = False) -> None:
-        """Process the attachment content and store it in the file store."""
+    async def process_and_store(self, file_store: FileStore, force: bool = False) -> None:
+        """Process the attachment content and store it in the file store.
+        
+        Args:
+            file_store: FileStore instance to use for storing files
+            force: Whether to force processing even if already stored
+        """
         logger.debug(f"Starting process_and_store for {self.filename} (force={force})")
         logger.debug(f"Initial state - mime_type: {self.mime_type}, status: {self.status}, content type: {type(self.content)}")
         
@@ -127,7 +136,7 @@ class Attachment(BaseModel):
         try:
             # Get content as bytes first
             logger.debug("Converting content to bytes")
-            content_bytes = await self.get_content_bytes()
+            content_bytes = await self.get_content_bytes(file_store=file_store)
             logger.debug(f"Successfully converted content to bytes, size: {len(content_bytes)} bytes")
 
             # Detect/verify MIME type
@@ -240,12 +249,10 @@ class Attachment(BaseModel):
 
             # Store the file
             logger.debug("Storing file in FileStore")
-            from tyler.storage import get_file_store
-            store = get_file_store()
             
             try:
                 logger.debug(f"Saving file to storage, content size: {len(content_bytes)} bytes")
-                result = await store.save(content_bytes, self.filename, self.mime_type)
+                result = await file_store.save(content_bytes, self.filename, self.mime_type)
                 logger.debug(f"Successfully saved file. Result: {result}")
                 
                 self.file_id = result['id']

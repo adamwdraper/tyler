@@ -20,7 +20,8 @@ agent = Agent(
     tools: List[Union[str, Dict]] = [],
     max_tool_iterations: int = 10,
     thread_store: Optional[ThreadStore] = None,
-    agents: List["Agent"] = []
+    agents: List["Agent"] = [],
+    file_store: Optional[FileStore] = None
 )
 ```
 
@@ -37,6 +38,7 @@ agent = Agent(
 | `max_tool_iterations` | int | No | 10 | Maximum number of tool iterations |
 | `thread_store` | Optional[ThreadStore] | No | ThreadStore() | Thread storage implementation |
 | `agents` | List[Agent] | No | [] | List of agents that this agent can delegate tasks to |
+| `file_store` | Optional[FileStore] | No | None | File storage implementation |
 
 ## Methods
 

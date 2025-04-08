@@ -8,20 +8,36 @@ The `FileStore` class provides a unified interface for storing and retrieving fi
 
 ## Initialization
 
+### Factory Pattern
+
 ```python
-from tyler.storage import FileStore, get_file_store
+from tyler.storage.file_store import FileStore
 
-# Using default configuration
-file_store = get_file_store()
-
-# Custom configuration
-file_store = FileStore(
+# Create a FileStore instance with factory pattern
+file_store = await FileStore.create(
     base_path="/path/to/files",
     max_file_size=100 * 1024 * 1024,  # 100MB
-    max_storage_size=10 * 1024 * 1024 * 1024,  # 10GB
-    allowed_mime_types={"application/pdf", "image/jpeg", "text/plain"}
+    max_storage_size=10 * 1024 * 1024 * 1024  # 10GB
+)
+
+# Or use default settings from environment variables
+file_store = await FileStore.create()
+
+# Pass the file_store to an Agent
+from tyler.models.agent import Agent
+
+agent = Agent(
+    model_name="gpt-4o",
+    purpose="To help with tasks",
+    thread_store=thread_store,
+    file_store=file_store  # Explicitly pass file_store instance
 )
 ```
+
+The factory pattern immediately validates storage access, allowing your application to:
+- Fail fast if storage isn't accessible
+- Validate configuration at startup
+- Ensure storage is ready for use
 
 ### Parameters
 
@@ -135,6 +151,38 @@ async def delete(
 #### Exceptions
 
 - `FileNotFoundError`: If file cannot be found
+
+### create
+
+Factory method to create and validate a FileStore instance.
+
+```python
+@classmethod
+async def create(
+    cls,
+    base_path: Optional[str] = None,
+    max_file_size: Optional[int] = None,
+    allowed_mime_types: Optional[Set[str]] = None,
+    max_storage_size: Optional[int] = None
+) -> FileStore
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `base_path` | Optional[str] | No | None | Base directory for file storage |
+| `max_file_size` | Optional[int] | No | None | Maximum allowed file size in bytes |
+| `allowed_mime_types` | Optional[Set[str]] | No | None | Set of allowed MIME types |
+| `max_storage_size` | Optional[int] | No | None | Maximum total storage size in bytes |
+
+#### Returns
+
+Initialized FileStore instance.
+
+#### Exceptions
+
+- `FileStoreError`: If storage directory cannot be created or accessed
 
 ### validate_file
 
@@ -314,7 +362,10 @@ The `FileStore` class works seamlessly with the `Attachment` model:
 
 ```python
 from tyler.models.attachment import Attachment
-from tyler.storage import get_file_store
+from tyler.storage.file_store import FileStore
+
+# Create a FileStore instance
+file_store = await FileStore.create()
 
 # Create an attachment
 attachment = Attachment(
@@ -323,8 +374,8 @@ attachment = Attachment(
     mime_type="application/pdf"
 )
 
-# Process and store the attachment
-await attachment.process_and_store()
+# Process and store the attachment with the file_store instance
+await attachment.process_and_store(file_store)
 
 # The attachment now has:
 # - file_id: Unique identifier in the file store
@@ -370,7 +421,7 @@ This URL is then used in the `Message.to_chat_completion_message()` method to in
    os.environ["TYLER_MAX_FILE_SIZE"] = "100000000"  # 100MB
    
    # Initialize once and reuse
-   store = get_file_store()
+   store = await FileStore.create()
    ```
 
 2. **Error Handling**
@@ -407,4 +458,4 @@ This URL is then used in the `Message.to_chat_completion_message()` method to in
 
 - [Attachment API](./attachment.md)
 - [Message API](./message.md)
-- [File Storage Examples](../examples/file-storage.md) 
+- [File Storage Examples](../examples/file-storage.md)

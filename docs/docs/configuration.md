@@ -106,16 +106,15 @@ Tyler supports multiple database backends for storing threads and messages. The 
 ```python
 from tyler.database.thread_store import ThreadStore
 
+# Use factory pattern for immediate connection validation
+store = await ThreadStore.create()  # Uses memory backend
+
 # Used by default when creating an agent
 agent = Agent(purpose="My purpose")  # Uses ThreadStore with memory backend
 
-# Or explicitly create and use
-store = ThreadStore()  # Uses memory backend by default
-agent = Agent(purpose="My purpose", thread_store=store)
-
 # Thread operations are immediate
 thread = Thread()
-await store.save(thread)  # Optional with memory store
+await store.save(thread)
 ```
 
 Key characteristics:
@@ -129,10 +128,14 @@ Key characteristics:
 ```python
 from tyler.database.thread_store import ThreadStore
 
-# Initialize with PostgreSQL URL
+# Use factory pattern for immediate connection validation
 db_url = "postgresql+asyncpg://user:pass@localhost/dbname"
-store = ThreadStore(db_url)
-await store.initialize()  # Must call this before using
+try:
+    store = await ThreadStore.create(db_url)
+    print("Connected to database successfully")
+except Exception as e:
+    print(f"Database connection failed: {e}")
+    # Handle connection failure appropriately
 
 # Create agent with database storage
 agent = Agent(
@@ -157,19 +160,36 @@ Key characteristics:
 - Cross-session support (can access threads from different processes)
 - Production-ready
 - Automatic schema management through SQLAlchemy
+- Connection validation at startup with factory pattern
 
 #### SQLite storage
 ```python
 from tyler.database.thread_store import ThreadStore
 
-# Initialize with SQLite URL
+# Use factory pattern for immediate connection validation
 db_url = "sqlite+aiosqlite:///path/to/db.sqlite"
-store = ThreadStore(db_url)
-await store.initialize()  # Must call this before using
+store = await ThreadStore.create(db_url)
 
-# Or use temporary SQLite database (no URL provided)
-store = ThreadStore()  # Creates temporary SQLite database
-await store.initialize()
+# Or use in-memory SQLite database
+store = await ThreadStore.create("sqlite+aiosqlite://")  # In-memory SQLite
+```
+
+#### Connection Error Handling
+
+The factory pattern allows you to handle connection errors gracefully at startup:
+
+```python
+try:
+    store = await ThreadStore.create("postgresql+asyncpg://user:pass@host/dbname")
+    print("Database connection established")
+except Exception as e:
+    print(f"Database connection failed: {e}")
+    # Options:
+    # 1. Exit the application
+    # 2. Fall back to a different database
+    # 3. Use in-memory storage as fallback
+    store = await ThreadStore.create()  # Fallback to memory storage
+    print("Using in-memory storage as fallback")
 ```
 
 ### File storage
@@ -183,7 +203,35 @@ Configuration options:
 - `TYLER_MAX_STORAGE_SIZE`: Maximum total storage size in bytes (default: 5368709120 / 5GB)
 - `TYLER_ALLOWED_MIME_TYPES`: Comma-separated list of allowed MIME types (default: common document, image, and archive types)
 
-The file storage system is accessed internally when needed (e.g., when handling message attachments) and doesn't require manual initialization. It provides:
+#### Creating and using a FileStore instance
+
+```python
+from tyler.storage.file_store import FileStore
+from tyler.models.agent import Agent
+
+# Create a FileStore instance with factory pattern
+file_store = await FileStore.create(
+    base_path="/path/to/files",  # Optional custom path
+    max_file_size=100 * 1024 * 1024,  # 100MB (optional)
+    max_storage_size=10 * 1024 * 1024 * 1024  # 10GB (optional)
+)
+
+# Or use default settings from environment variables
+file_store = await FileStore.create()
+
+# Pass the file_store instance to an Agent
+agent = Agent(
+    model_name="gpt-4o",
+    purpose="To help with tasks",
+    thread_store=thread_store,
+    file_store=file_store  # Explicitly pass file_store instance
+)
+
+# When saving a thread with attachments, pass the file_store
+await thread_store.save(thread, file_store=file_store)
+```
+
+The file storage system provides:
 
 Key features:
 - Automatic initialization and configuration

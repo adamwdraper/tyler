@@ -18,145 +18,14 @@ pytest_plugins = ('pytest_asyncio',)
 @pytest.fixture
 def env_vars():
     """Save and restore environment variables."""
-    old_vars = {}
-    for var in [
-        "TYLER_DB_TYPE",
-        "TYLER_DB_HOST",
-        "TYLER_DB_PORT",
-        "TYLER_DB_NAME",
-        "TYLER_DB_USER",
-        "TYLER_DB_PASSWORD",
-        "TYLER_DB_PATH",
-        "TYLER_DB_ECHO",
-        "TYLER_DB_POOL_SIZE",
-        "TYLER_DB_MAX_OVERFLOW"
-    ]:
-        old_vars[var] = os.environ.get(var)
+    # This fixture is no longer needed but kept for backward compatibility
     yield
-    # Restore old values
-    for var, value in old_vars.items():
-        if value is None:
-            os.environ.pop(var, None)
-        else:
-            os.environ[var] = value
-
-@pytest.mark.asyncio
-async def test_env_var_config_sqlite(env_vars):
-    """Test ThreadStore initialization with SQLite environment variables."""
-    # Set environment variables for SQLite
-    os.environ.update({
-        "TYLER_DB_TYPE": "sqlite",
-        "TYLER_DB_PATH": ":memory:",
-        "TYLER_DB_ECHO": "true"
-    })
-    
-    # Initialize store without URL
-    store = ThreadStore()
-    
-    # Verify SQLite URL was constructed correctly
-    assert "sqlite+aiosqlite" in store.database_url
-    assert ":memory:" in store.database_url
-    assert store.engine.echo is True
-
-@pytest.mark.asyncio
-async def test_env_var_config_postgresql(env_vars):
-    """Test ThreadStore initialization with PostgreSQL environment variables."""
-    # Set environment variables for PostgreSQL
-    os.environ.update({
-        "TYLER_DB_TYPE": "postgresql",
-        "TYLER_DB_HOST": "testhost",
-        "TYLER_DB_PORT": "5433",
-        "TYLER_DB_NAME": "testdb",
-        "TYLER_DB_USER": "testuser",
-        "TYLER_DB_PASSWORD": "testpass",
-        "TYLER_DB_ECHO": "true"
-    })
-    
-    # Initialize store without URL
-    store = ThreadStore()
-    
-    # Verify PostgreSQL URL was constructed correctly
-    assert "postgresql+asyncpg" in store.database_url
-    assert "testuser:testpass@testhost:5433/testdb" in store.database_url
-
-@pytest.mark.asyncio
-async def test_missing_sqlite_path(env_vars):
-    """Test error when SQLite type is specified but path is missing."""
-    # Set environment variables with missing path
-    os.environ.update({
-        "TYLER_DB_TYPE": "sqlite"
-    })
-    
-    # Verify initialization raises ValueError
-    with pytest.raises(ValueError) as excinfo:
-        ThreadStore()
-    
-    # Verify error message
-    assert "TYLER_DB_PATH environment variable is missing" in str(excinfo.value)
-
-@pytest.mark.asyncio
-async def test_missing_postgresql_vars(env_vars):
-    """Test error when PostgreSQL type is specified but required vars are missing."""
-    # Set environment variables with missing required vars
-    os.environ.update({
-        "TYLER_DB_TYPE": "postgresql",
-        "TYLER_DB_HOST": "testhost",
-        # Missing PORT, USER, PASSWORD, NAME
-    })
-    
-    # Verify initialization raises ValueError
-    with pytest.raises(ValueError) as excinfo:
-        ThreadStore()
-    
-    # Verify error message mentions missing vars
-    error_msg = str(excinfo.value)
-    assert "missing required environment variables" in error_msg
-    assert "TYLER_DB_PORT" in error_msg
-    assert "TYLER_DB_USER" in error_msg
-    assert "TYLER_DB_PASSWORD" in error_msg
-    assert "TYLER_DB_NAME" in error_msg
-
-@pytest.mark.asyncio
-async def test_url_override(env_vars):
-    """Test that explicit URL overrides environment variables."""
-    # Set environment variables
-    os.environ.update({
-        "TYLER_DB_TYPE": "postgresql",
-        "TYLER_DB_HOST": "wronghost",
-        "TYLER_DB_PORT": "5432",
-        "TYLER_DB_NAME": "wrongdb",
-        "TYLER_DB_USER": "wronguser",
-        "TYLER_DB_PASSWORD": "wrongpass"
-    })
-    
-    # Initialize with explicit URL
-    test_url = "sqlite+aiosqlite:///test.db"
-    store = ThreadStore(test_url)
-    
-    # Verify explicit URL was used
-    assert store.database_url == test_url
-
-@pytest.mark.asyncio
-async def test_memory_backend_default(env_vars):
-    """Test that MemoryBackend is used when no configuration is provided."""
-    # Clear any existing DB environment variables
-    for var in ["TYLER_DB_TYPE", "TYLER_DB_PATH", "TYLER_DB_HOST", "TYLER_DB_PORT", 
-                "TYLER_DB_NAME", "TYLER_DB_USER", "TYLER_DB_PASSWORD"]:
-        if var in os.environ:
-            del os.environ[var]
-    
-    # Initialize store without URL
-    store = ThreadStore()
-    
-    # Verify MemoryBackend is used
-    assert isinstance(store._backend, MemoryBackend)
-    assert store.database_url is None
 
 @pytest.fixture
 async def thread_store():
     """Create a ThreadStore for testing using SQLBackend with an in-memory DB."""
-    store = ThreadStore("sqlite+aiosqlite:///:memory:")
-    await store.initialize()
+    # Use factory pattern for immediate initialization
+    store = await ThreadStore.create(":memory:")
     async with store._backend.engine.begin() as conn:
         # Reset tables for testing
         await conn.run_sync(Base.metadata.drop_all)
@@ -174,10 +43,11 @@ def sample_thread():
 
 @pytest.mark.asyncio
 async def test_thread_store_init():
-    """Test ThreadStore initialization"""
-    store = ThreadStore("sqlite+aiosqlite:///:memory:")
-    await store.initialize()
+    """Test ThreadStore initialization using factory pattern"""
+    # Use the factory pattern for creation and initialization
+    store = await ThreadStore.create(":memory:")
     assert store.engine is not None
+    assert store._initialized is True
     
     # Verify we can save and retrieve a thread
     thread = Thread(title="Test Init")
@@ -186,32 +56,78 @@ async def test_thread_store_init():
     retrieved = await store.get(thread.id)
     assert retrieved is not None
     assert retrieved.title == "Test Init"
+    
+    # Clean up
+    await store._backend.engine.dispose()
 
 @pytest.mark.asyncio
-async def test_lazy_initialization():
-    """Test that ThreadStore initializes lazily when operations are performed."""
-    # Create store without initializing
-    store = ThreadStore("sqlite+aiosqlite:///:memory:")
+async def test_factory_pattern():
+    """Test the ThreadStore.create factory method"""
+    # Create with in-memory backend
+    memory_store = await ThreadStore.create()
+    assert isinstance(memory_store._backend, MemoryBackend)
+    assert memory_store._initialized is True
+    
+    # Create with SQL backend
+    sql_store = await ThreadStore.create(":memory:")
+    assert isinstance(sql_store._backend, SQLBackend)
+    assert sql_store._initialized is True
+    assert sql_store.engine is not None
+    
+    # Create and use
+    store = await ThreadStore.create(":memory:")
+    thread = Thread(title="Factory Pattern Test")
+    await store.save(thread)
+    
+    retrieved = await store.get(thread.id)
+    assert retrieved is not None
+    assert retrieved.title == "Factory Pattern Test"
+    
+    # Clean up
+    await sql_store._backend.engine.dispose()
+    await store._backend.engine.dispose()
+
+@pytest.mark.asyncio
+async def test_auto_initialization():
+    """Test that ThreadStore initializes automatically when operations are performed."""
+    # Create store without explicitly initializing (backward compatibility pattern)
+    store = ThreadStore(":memory:")
     
     # Verify not initialized yet
     assert not store._initialized
     
     # Create a thread
-    thread = Thread(title="Test Lazy Init")
+    thread = Thread(title="Test Auto Init")
     
-    # Save thread - should trigger initialization
+    # Save thread - should trigger automatic initialization
     await store.save(thread)
     
-    # Verify initialized now
+    # Verify now initialized
     assert store._initialized
     
     # Verify thread was saved
     retrieved = await store.get(thread.id)
     assert retrieved is not None
-    assert retrieved.title == "Test Lazy Init"
+    assert retrieved.title == "Test Auto Init"
     
     # Clean up
     await store._backend.engine.dispose()
+
+@pytest.mark.asyncio
+async def test_thread_store_default_url():
+    """Test ThreadStore initialization with default behavior."""
+    # Test both initialization methods
+    
+    # Traditional method
+    traditional_store = ThreadStore()
+    assert isinstance(traditional_store._backend, MemoryBackend)
+    assert traditional_store.database_url is None
+    
+    # Factory method
+    factory_store = await ThreadStore.create()
+    assert isinstance(factory_store._backend, MemoryBackend)
+    assert factory_store.database_url is None
+    assert factory_store._initialized is True
 
 @pytest.mark.asyncio
 async def test_save_thread(thread_store, sample_thread):
@@ -345,22 +261,6 @@ async def test_thread_update(thread_store, sample_thread):
     assert updated_thread.messages[1].content == "Response"
 
 @pytest.mark.asyncio
-async def test_thread_store_default_url(env_vars):
-    """Test ThreadStore initialization with default behavior."""
-    # Clear any existing DB environment variables
-    for var in ["TYLER_DB_TYPE", "TYLER_DB_PATH", "TYLER_DB_HOST", "TYLER_DB_PORT", 
-                "TYLER_DB_NAME", "TYLER_DB_USER", "TYLER_DB_PASSWORD"]:
-        if var in os.environ:
-            del os.environ[var]
-    
-    # Initialize store without URL
-    store = ThreadStore()
-    
-    # Verify MemoryBackend is used by default when no env vars or URL
-    assert isinstance(store._backend, MemoryBackend)
-    assert store.database_url is None
-
-@pytest.mark.asyncio
 async def test_thread_store_temp_cleanup():
     """Test that temporary database files are cleaned up."""
     # Create store with temp directory
@@ -391,6 +291,7 @@ async def test_thread_store_temp_cleanup():
 async def test_thread_store_connection_management():
     """Test proper connection management."""
     store = ThreadStore(":memory:")
+    await store.initialize()
     
     # Create tables
     async with store._backend.engine.begin() as conn:
@@ -416,6 +317,7 @@ async def test_thread_store_connection_management():
 async def test_thread_store_concurrent_access():
     """Test concurrent access to thread store."""
     store = ThreadStore(":memory:")
+    await store.initialize()
     
     # Create tables
     async with store._backend.engine.begin() as conn:
@@ -445,6 +347,7 @@ async def test_thread_store_concurrent_access():
 async def test_thread_store_json_serialization():
     """Test JSON serialization of complex thread data."""
     store = ThreadStore(":memory:")
+    await store.initialize()
     
     # Create tables
     async with store._backend.engine.begin() as conn:
@@ -473,6 +376,7 @@ async def test_thread_store_json_serialization():
 async def test_thread_store_error_handling():
     """Test error handling in thread store operations."""
     store = ThreadStore(":memory:")
+    await store.initialize()
     
     # Create tables
     async with store._backend.engine.begin() as conn:
@@ -494,6 +398,7 @@ async def test_thread_store_error_handling():
 async def test_thread_store_pagination():
     """Test thread listing with pagination."""
     store = ThreadStore(":memory:")
+    await store.initialize()
     
     # Create tables
     async with store._backend.engine.begin() as conn:
@@ -654,8 +559,8 @@ async def test_save_thread_partial_attachment_failure(thread_store):
     assert retrieved_thread is None
     
     # Verify the file was cleaned up from storage
-    from tyler.storage import get_file_store
-    store = get_file_store()
+    from tyler.storage.file_store import FileStore
+    store = FileStore()
     files = await store.list_files()
     assert not any(f.endswith("good.txt") for f in files)
 
@@ -721,8 +626,8 @@ async def test_save_thread_database_failure_keeps_attachments(thread_store, monk
         assert "Database error" in str(exc_info.value)
     
     # Verify attachment files still exist (weren't cleaned up)
-    from tyler.storage import get_file_store
-    store = get_file_store()
+    from tyler.storage.file_store import FileStore
+    store = FileStore()
     files = await store.list_files()
     assert any(attachment.file_id in f for f in files), f"Expected to find file ID {attachment.file_id} in {files}"
 

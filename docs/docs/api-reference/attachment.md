@@ -91,11 +91,11 @@ Returns:
 Get the content as bytes, converting from base64 if necessary.
 
 ```python
-async def get_content_bytes(self) -> bytes
+async def get_content_bytes(self, file_store: Optional[FileStore] = None) -> bytes
 ```
 
 Retrieves content from:
-1. Storage backend if `file_id` exists
+1. Storage backend if `file_id` exists and file_store is provided
 2. `content` field if stored as bytes
 3. Decodes `content` if stored as base64 string or data URL
 
@@ -123,6 +123,7 @@ Process the attachment content and store it in the file store.
 ```python
 async def process_and_store(
     self,
+    file_store: FileStore,
     force: bool = False
 ) -> None
 ```
@@ -131,6 +132,7 @@ async def process_and_store(
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
+| `file_store` | FileStore | Yes | - | FileStore instance to use for storage |
 | `force` | bool | No | False | Force processing and storage even if already stored |
 
 #### Processing and Storage Steps

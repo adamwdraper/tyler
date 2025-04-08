@@ -1,8 +1,11 @@
 import os
 import pytest
 import tempfile
+import shutil
 from pathlib import Path
 from typing import AsyncGenerator
+import uuid
+import asyncio
 from tyler.storage.file_store import (
     FileStore, 
     FileStoreError,
@@ -11,6 +14,24 @@ from tyler.storage.file_store import (
     UnsupportedFileTypeError,
     FileTooLargeError
 )
+
+@pytest.fixture
+def temp_dir():
+    """Create a temporary directory for file storage tests"""
+    temp_dir = tempfile.mkdtemp()
+    yield temp_dir
+    shutil.rmtree(temp_dir)
+
+@pytest.fixture
+async def file_store(temp_dir):
+    """Create a FileStore instance for testing"""
+    store = FileStore(
+        base_path=temp_dir,
+        max_file_size=1024 * 1024,  # 1MB
+        allowed_mime_types={"text/plain", "application/json", "image/jpeg"},
+        max_storage_size=10 * 1024 * 1024  # 10MB
+    )
+    yield store
 
 @pytest.fixture
 def temp_storage_path(tmp_path):
@@ -267,4 +288,30 @@ async def test_health_check(temp_store: FileStore):
     assert health['healthy'] is True
     assert isinstance(health['total_size'], int)
     assert isinstance(health['file_count'], int)
-    assert isinstance(health['errors'], list) 
+    assert isinstance(health['errors'], list)
+
+@pytest.mark.asyncio
+async def test_create(temp_dir):
+    """Test the factory pattern for creating FileStore instances"""
+    # Create with factory pattern
+    store = await FileStore.create(
+        base_path=temp_dir,
+        max_file_size=2048 * 1024,  # 2MB
+        allowed_mime_types={"application/pdf", "image/png"},
+        max_storage_size=20 * 1024 * 1024  # 20MB
+    )
+    
+    # Verify store is configured correctly
+    assert store.base_path == Path(temp_dir)
+    assert store.max_file_size == 2048 * 1024
+    assert store.allowed_mime_types == {"application/pdf", "image/png"}
+    assert store.max_storage_size == 20 * 1024 * 1024
+    
+    # Test that we can use the store
+    test_content = b"Test PDF content"
+    # We'll use a mock PDF - it won't validate as real PDF but our test setup allows this MIME
+    metadata = await store.save(test_content, "test.pdf", "application/pdf")
+    
+    # Verify content was saved
+    content = await store.get(metadata["id"], metadata["storage_path"])
+    assert content == test_content 

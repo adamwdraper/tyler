@@ -130,14 +130,13 @@ async def test_get_content_bytes():
         storage_path="/path/to/file.txt"
     )
     
-    with patch('tyler.storage.get_file_store') as mock_get_store:
-        mock_store = Mock()
-        mock_store.get = AsyncMock(return_value=b"Stored content")
-        mock_get_store.return_value = mock_store
-        
-        content = await attachment.get_content_bytes()
-        assert content == b"Stored content"
-        mock_store.get.assert_called_once_with("test-file", storage_path="/path/to/file.txt")
+    # Create a mock FileStore directly
+    mock_store = Mock()
+    mock_store.get = AsyncMock(return_value=b"Stored content")
+    
+    content = await attachment.get_content_bytes(file_store=mock_store)
+    assert content == b"Stored content"
+    mock_store.get.assert_called_once_with("test-file", storage_path="/path/to/file.txt")
 
 @pytest.mark.asyncio
 async def test_ensure_stored():
@@ -149,18 +148,16 @@ async def test_ensure_stored():
         mime_type="text/plain"
     )
 
-    # Mock the file store
-    with patch('tyler.storage.get_file_store') as mock_get_store, \
-         patch('tyler.storage.file_store.FileStore.get_file_url', return_value="/files//path/to/stored/file.txt"):
-        mock_store = Mock()
-        mock_store.save = AsyncMock(return_value={
-            'id': 'file-123',
-            'storage_path': '/path/to/stored/file.txt',
-            'storage_backend': 'local'
-        })
-        mock_get_store.return_value = mock_store
-
-        await attachment.process_and_store()
+    # Mock the file store directly
+    mock_store = Mock()
+    mock_store.save = AsyncMock(return_value={
+        'id': 'file-123',
+        'storage_path': '/path/to/stored/file.txt',
+        'storage_backend': 'local'
+    })
+    
+    with patch('tyler.storage.file_store.FileStore.get_file_url', return_value="/files//path/to/stored/file.txt"):
+        await attachment.process_and_store(file_store=mock_store)
         
         # Verify the file was stored
         mock_store.save.assert_called_once_with(content, "test.txt", "text/plain")
@@ -439,24 +436,24 @@ async def test_process_attachment_pdf():
     mock_pdf_reader.pages = [Mock()]
     mock_pdf_reader.pages[0].extract_text.return_value = "Extracted PDF text"
 
+    # Mock file store directly
+    mock_store = Mock()
+    mock_store.save = AsyncMock(return_value={
+        'id': 'file-123',
+        'storage_path': '/path/to/stored/test.pdf',
+        'storage_backend': 'local'
+    })
+
     with patch('tyler.models.attachment.Attachment.get_content_bytes', new_callable=AsyncMock) as mock_get_content, \
          patch('magic.from_buffer', return_value='application/pdf') as mock_magic, \
-         patch('tyler.storage.get_file_store') as mock_get_store, \
          patch('pypdf.PdfReader', return_value=mock_pdf_reader) as mock_pdf_reader_class, \
          patch('tyler.storage.file_store.FileStore.get_file_url', return_value="/files//path/to/stored/test.pdf"):
         
         # Setup mocks
         mock_get_content.return_value = content
-        mock_store = Mock()
-        mock_store.save = AsyncMock(return_value={
-            'id': 'file-123',
-            'storage_path': '/path/to/stored/test.pdf',
-            'storage_backend': 'local'
-        })
-        mock_get_store.return_value = mock_store
         
         # Process the attachment
-        await attachment.process_and_store()
+        await attachment.process_and_store(file_store=mock_store)
         
         # Verify results
         assert attachment.mime_type == 'application/pdf'
@@ -475,11 +472,14 @@ async def test_process_attachment_error():
     """Test error handling in process_and_store when get_content_bytes fails."""
     attachment = Attachment(filename="test.txt", content="invalid content")
     
+    # Create a mock file store directly
+    mock_store = Mock()
+    
     # Mock get_content_bytes to raise an exception
     with patch.object(Attachment, 'get_content_bytes', AsyncMock(side_effect=Exception("Test error"))):
         # Call process_and_store
         with pytest.raises(RuntimeError, match="Failed to process attachment test.txt"):
-            await attachment.process_and_store()
+            await attachment.process_and_store(file_store=mock_store)
 
 @pytest.mark.asyncio
 async def test_filename_update_after_storage():
@@ -496,19 +496,17 @@ async def test_filename_update_after_storage():
     new_filename = "abc123def456.txt"
     storage_path = f"ab/{new_filename}"  # Mimics the sharded structure
 
-    # Mock the file store
-    with patch('tyler.storage.get_file_store') as mock_get_store, \
-         patch('tyler.storage.file_store.FileStore.get_file_url', return_value=f"/files/{storage_path}"):
-        mock_store = Mock()
-        mock_store.save = AsyncMock(return_value={
-            'id': 'file-123',
-            'storage_path': storage_path,
-            'storage_backend': 'local'
-        })
-        mock_get_store.return_value = mock_store
-
+    # Create a mock file store directly
+    mock_store = Mock()
+    mock_store.save = AsyncMock(return_value={
+        'id': 'file-123',
+        'storage_path': storage_path,
+        'storage_backend': 'local'
+    })
+    
+    with patch('tyler.storage.file_store.FileStore.get_file_url', return_value=f"/files/{storage_path}"):
         # Process and store the attachment
-        await attachment.process_and_store()
+        await attachment.process_and_store(file_store=mock_store)
         
         # Verify the filename was updated
         assert attachment.filename == new_filename
