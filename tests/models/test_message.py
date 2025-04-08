@@ -687,32 +687,32 @@ async def test_ensure_attachments_stored():
         ]
     )
 
-    # Mock the file store, FileStore.get_file_url, and FileStore.get_base_path
-    with patch('tyler.storage.get_file_store') as mock_get_store, \
-         patch('tyler.storage.file_store.FileStore.get_file_url', side_effect=[
-             "/files//path/to/stored/file1.txt",
-             "/files//path/to/stored/file2.txt"
-         ]), \
+    # Create a mock FileStore directly
+    mock_store = Mock()
+    # Configure the mock to return different values for each call
+    mock_store.save = AsyncMock(side_effect=[
+        {
+            'id': 'file-123',
+            'storage_path': '/path/to/stored/file1.txt',
+            'storage_backend': 'local'
+        },
+        {
+            'id': 'file-456',
+            'storage_path': '/path/to/stored/file2.txt',
+            'storage_backend': 'local'
+        }
+    ])
+    
+    # Mock FileStore.get_file_url and FileStore.get_base_path
+    with patch('tyler.storage.file_store.FileStore.get_file_url', side_effect=[
+            "/files//path/to/stored/file1.txt",
+            "/files//path/to/stored/file2.txt"
+        ]), \
          patch('tyler.storage.file_store.FileStore.get_base_path', return_value="/files"):
-        mock_store = Mock()
-        # Configure the mock to return different values for each call
-        mock_store.save = AsyncMock(side_effect=[
-            {
-                'id': 'file-123',
-                'storage_path': '/path/to/stored/file1.txt',
-                'storage_backend': 'local'
-            },
-            {
-                'id': 'file-456',
-                'storage_path': '/path/to/stored/file2.txt',
-                'storage_backend': 'local'
-            }
-        ])
-        mock_get_store.return_value = mock_store
         
         # Process and store each attachment individually
         for attachment in message.attachments:
-            await attachment.process_and_store()
+            await attachment.process_and_store(file_store=mock_store)
         
         # Verify all attachments were stored
         assert mock_store.save.call_count == 2
@@ -752,22 +752,21 @@ async def test_ensure_attachments_stored_with_force():
         ]
     )
 
-    # Mock the file store, FileStore.get_file_url, and FileStore.get_base_path
-    with patch('tyler.storage.get_file_store') as mock_get_store, \
-         patch('tyler.storage.file_store.FileStore.get_file_url', return_value="/files//path/to/new/file.txt"), \
+    # Create a mock FileStore directly
+    mock_store = Mock()
+    mock_store.save = AsyncMock(return_value={
+        'id': 'new-file-id',
+        'storage_path': '/path/to/new/file.txt',
+        'storage_backend': 'local'
+    })
+    # Also mock the get method as AsyncMock
+    mock_store.get = AsyncMock(return_value=b"Test content")
+    
+    with patch('tyler.storage.file_store.FileStore.get_file_url', return_value="/files//path/to/new/file.txt"), \
          patch('tyler.storage.file_store.FileStore.get_base_path', return_value="/files"):
-        mock_store = Mock()
-        mock_store.save = AsyncMock(return_value={
-            'id': 'new-file-id',
-            'storage_path': '/path/to/new/file.txt',
-            'storage_backend': 'local'
-        })
-        # Also mock the get method as AsyncMock
-        mock_store.get = AsyncMock(return_value=b"Test content")
-        mock_get_store.return_value = mock_store
         
         # Process and store the attachment with force=True
-        await message.attachments[0].process_and_store(force=True)
+        await message.attachments[0].process_and_store(file_store=mock_store, force=True)
         
         # Verify the attachment was re-stored
         mock_store.save.assert_called_once()
@@ -802,20 +801,19 @@ async def test_ensure_attachments_stored_with_existing_processed_content():
         ]
     )
 
-    # Mock the file store, FileStore.get_file_url, and FileStore.get_base_path
-    with patch('tyler.storage.get_file_store') as mock_get_store, \
-         patch('tyler.storage.file_store.FileStore.get_file_url', return_value="/files//path/to/stored/file.txt"), \
+    # Create a mock FileStore directly
+    mock_store = Mock()
+    mock_store.save = AsyncMock(return_value={
+        'id': 'file-123',
+        'storage_path': '/path/to/stored/file.txt',
+        'storage_backend': 'local'
+    })
+    
+    with patch('tyler.storage.file_store.FileStore.get_file_url', return_value="/files//path/to/stored/file.txt"), \
          patch('tyler.storage.file_store.FileStore.get_base_path', return_value="/files"):
-        mock_store = Mock()
-        mock_store.save = AsyncMock(return_value={
-            'id': 'file-123',
-            'storage_path': '/path/to/stored/file.txt',
-            'storage_backend': 'local'
-        })
-        mock_get_store.return_value = mock_store
         
         # Process and store the attachment
-        await message.attachments[0].process_and_store()
+        await message.attachments[0].process_and_store(file_store=mock_store)
         
         # Verify the attachment was stored
         mock_store.save.assert_called_once()

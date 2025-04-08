@@ -203,7 +203,35 @@ Configuration options:
 - `TYLER_MAX_STORAGE_SIZE`: Maximum total storage size in bytes (default: 5368709120 / 5GB)
 - `TYLER_ALLOWED_MIME_TYPES`: Comma-separated list of allowed MIME types (default: common document, image, and archive types)
 
-The file storage system is accessed internally when needed (e.g., when handling message attachments) and doesn't require manual initialization. It provides:
+#### Creating and using a FileStore instance
+
+```python
+from tyler.storage.file_store import FileStore
+from tyler.models.agent import Agent
+
+# Create a FileStore instance with factory pattern
+file_store = await FileStore.create(
+    base_path="/path/to/files",  # Optional custom path
+    max_file_size=100 * 1024 * 1024,  # 100MB (optional)
+    max_storage_size=10 * 1024 * 1024 * 1024  # 10GB (optional)
+)
+
+# Or use default settings from environment variables
+file_store = await FileStore.create()
+
+# Pass the file_store instance to an Agent
+agent = Agent(
+    model_name="gpt-4o",
+    purpose="To help with tasks",
+    thread_store=thread_store,
+    file_store=file_store  # Explicitly pass file_store instance
+)
+
+# When saving a thread with attachments, pass the file_store
+await thread_store.save(thread, file_store=file_store)
+```
+
+The file storage system provides:
 
 Key features:
 - Automatic initialization and configuration

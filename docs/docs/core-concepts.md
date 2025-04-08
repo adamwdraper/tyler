@@ -701,34 +701,36 @@ threads = await store.find_by_source(
 
 ### File Storage
 
-Tyler provides a unified `FileStore` interface for file storage and retrieval. Files are automatically stored and processed when attached to messages.
+Tyler provides a unified `FileStore` class for file storage and retrieval. Files are automatically stored and processed when attached to messages.
 
 ```python
-# Factory pattern for file store initialization
-from tyler.storage import initialize_file_store, FileStore, get_file_store
+from tyler.storage.file_store import FileStore
 
-# Initialize global instance at application startup
-async def startup():
-    # Global singleton for application-wide use
-    await initialize_file_store(
-        base_path="/path/to/files",
-        max_file_size=100 * 1024 * 1024,  # 100MB
-        max_storage_size=10 * 1024 * 1024 * 1024  # 10GB
-    )
-    
-    # After initialization, get the global instance anywhere in your code
-    file_store = get_file_store()
-    
-# Or create individual instances
-store = await FileStore.create("/path/to/custom/files")
+# Create a file store instance with factory pattern (validates settings immediately)
+file_store = await FileStore.create(
+    base_path="/path/to/files",
+    max_file_size=100 * 1024 * 1024,  # 100MB
+    max_storage_size=10 * 1024 * 1024 * 1024  # 10GB
+)
 
-# Attachments are automatically processed and stored when saving a thread
+# Or use default settings from environment variables
+file_store = await FileStore.create()
+
+# Pass file_store to Agent
+agent = Agent(
+    model_name="gpt-4o",
+    purpose="To help with tasks",
+    thread_store=thread_store,
+    file_store=file_store  # Explicitly pass file_store instance
+)
+
+# When handling attachments
 message = Message(role="user", content="Here's a file")
 message.add_attachment(file_bytes, filename="document.pdf")
 thread.add_message(message)
 
-# Simply save the thread - attachments are processed automatically
-await thread_store.save(thread)
+# Pass file_store when saving to process attachments
+await thread_store.save(thread, file_store=file_store)
 
 # Access attachment information after storage
 for attachment in message.attachments:
@@ -754,10 +756,7 @@ TYLER_ALLOWED_MIME_TYPES=image/jpeg,application/pdf  # Allowed MIME types
 
 #### Common operations:
 ```python
-# Get initialized file store
-file_store = get_file_store()
-
-# Save a file
+# Use file_store instance directly
 metadata = await file_store.save(
     content=pdf_bytes,
     filename="document.pdf",

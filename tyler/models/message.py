@@ -233,8 +233,12 @@ class Message(BaseModel):
             
         return message_dict
         
-    def to_chat_completion_message(self) -> Dict[str, Any]:
-        """Return message in the format expected by chat completion APIs"""
+    def to_chat_completion_message(self, file_store: Optional[FileStore] = None) -> Dict[str, Any]:
+        """Return message in the format expected by chat completion APIs
+        
+        Args:
+            file_store: Optional FileStore instance for accessing file URLs
+        """
         base_content = self.content if isinstance(self.content, str) else ""
         
         message_dict = {

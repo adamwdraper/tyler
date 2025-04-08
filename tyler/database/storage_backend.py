@@ -14,6 +14,7 @@ from tyler.models.thread import Thread
 from tyler.models.message import Message
 from tyler.models.attachment import Attachment
 from tyler.utils.logging import get_logger
+from tyler.storage.file_store import FileStore
 from .models import Base, ThreadRecord, MessageRecord
 
 logger = get_logger(__name__)
@@ -254,6 +255,10 @@ class SQLBackend(StorageBackend):
     async def save(self, thread: Thread) -> Thread:
         """Save a thread and its messages to the database."""
         session = await self._get_session()
+        
+        # Create a FileStore instance for attachment storage
+        file_store = FileStore()
+        
         try:
             # First process and store all attachments
             logger.info(f"Starting to process attachments for thread {thread.id}")
@@ -263,7 +268,7 @@ class SQLBackend(StorageBackend):
                         logger.info(f"Processing {len(message.attachments)} attachments for message {message.id}")
                         for attachment in message.attachments:
                             logger.info(f"Processing attachment {attachment.filename} with status {attachment.status}")
-                            await attachment.process_and_store()
+                            await attachment.process_and_store(file_store)
                             logger.info(f"Finished processing attachment {attachment.filename}, new status: {attachment.status}")
             except Exception as e:
                 # Handle attachment processing failures

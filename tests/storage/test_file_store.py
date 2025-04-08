@@ -14,7 +14,6 @@ from tyler.storage.file_store import (
     UnsupportedFileTypeError,
     FileTooLargeError
 )
-from tyler.storage import get_file_store, initialize_file_store, FileStoreManager
 
 @pytest.fixture
 def temp_dir():
@@ -292,47 +291,10 @@ async def test_health_check(temp_store: FileStore):
     assert isinstance(health['errors'], list)
 
 @pytest.mark.asyncio
-async def test_factory_pattern(temp_dir):
+async def test_create(temp_dir):
     """Test the factory pattern for creating FileStore instances"""
     # Create with factory pattern
     store = await FileStore.create(
-        base_path=temp_dir,
-        max_file_size=1024 * 1024,  # 1MB
-        allowed_mime_types={"text/plain", "application/json"},
-        max_storage_size=10 * 1024 * 1024  # 10MB
-    )
-    
-    # Verify store is configured correctly
-    assert store.base_path == Path(temp_dir)
-    assert store.max_file_size == 1024 * 1024
-    assert store.allowed_mime_types == {"text/plain", "application/json"}
-    assert store.max_storage_size == 10 * 1024 * 1024
-    
-    # Test that we can use the store
-    test_content = b"Hello, World!"
-    metadata = await store.save(test_content, "test.txt", "text/plain")
-    assert metadata["id"] is not None
-    assert metadata["mime_type"] == "text/plain"
-    
-    # Verify content was saved correctly
-    content = await store.get(metadata["id"], metadata["storage_path"])
-    assert content == test_content
-    
-    # Test validation with invalid path
-    with pytest.raises(FileStoreError):
-        await FileStore.create(
-            base_path="/nonexistent/directory/that/should/not/exist",
-            max_file_size=1024
-        )
-
-@pytest.mark.asyncio
-async def test_initialize_file_store(temp_dir):
-    """Test the initialize_file_store function"""
-    # Reset the FileStoreManager singleton before testing
-    FileStoreManager._instance = None
-    
-    # Initialize with factory function
-    store = await initialize_file_store(
         base_path=temp_dir,
         max_file_size=2048 * 1024,  # 2MB
         allowed_mime_types={"application/pdf", "image/png"},
@@ -345,10 +307,6 @@ async def test_initialize_file_store(temp_dir):
     assert store.allowed_mime_types == {"application/pdf", "image/png"}
     assert store.max_storage_size == 20 * 1024 * 1024
     
-    # Verify global instance is set
-    global_store = get_file_store()
-    assert global_store is store
-    
     # Test that we can use the store
     test_content = b"Test PDF content"
     # We'll use a mock PDF - it won't validate as real PDF but our test setup allows this MIME
@@ -356,7 +314,4 @@ async def test_initialize_file_store(temp_dir):
     
     # Verify content was saved
     content = await store.get(metadata["id"], metadata["storage_path"])
-    assert content == test_content
-    
-    # Cleanup - reset singleton for other tests
-    FileStoreManager._instance = None 
+    assert content == test_content 

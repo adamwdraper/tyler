@@ -76,9 +76,10 @@ def test_thread_serialization(sample_thread):
         assert new_msg.content == orig_msg.content
         assert new_msg.sequence == orig_msg.sequence
 
-def test_get_messages_for_chat_completion(sample_thread):
+@pytest.mark.asyncio
+async def test_get_messages_for_chat_completion(sample_thread):
     """Test getting messages in chat completion format"""
-    messages = sample_thread.get_messages_for_chat_completion()
+    messages = await sample_thread.get_messages_for_chat_completion()
     assert len(messages) == 3
     assert messages[0] == {
         "role": "system",

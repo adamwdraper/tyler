@@ -11,6 +11,7 @@ from tyler.models.thread import Thread
 from tyler.models.message import Message
 from tyler.models.attachment import Attachment
 from tyler.database.thread_store import ThreadStore
+from tyler.storage.file_store import FileStore
 from tyler.utils.tool_runner import tool_runner
 from enum import Enum
 from tyler.utils.logging import get_logger
@@ -114,6 +115,7 @@ class Agent(Model):
     tools: List[Union[str, Dict]] = Field(default_factory=list, description="List of tools available to the agent. Can include built-in tool module names (as strings) and custom tools (as dicts with required 'definition' and 'implementation' keys, and an optional 'attributes' key for tool metadata). For built-in tools, you can specify specific tools to include using the format 'module:tool1,tool2'.")
     max_tool_iterations: int = Field(default=10)
     thread_store: Optional[ThreadStore] = Field(default=None, description="Thread storage implementation. Uses ThreadStore with memory backend by default.")
+    file_store: Optional[FileStore] = Field(default=None, description="File storage implementation. Uses FileStore with default settings if not provided.")
     agents: List["Agent"] = Field(default_factory=list, description="List of agents that this agent can delegate tasks to.")
     
     _prompt: AgentPrompt = PrivateAttr(default_factory=AgentPrompt)
@@ -129,6 +131,11 @@ class Agent(Model):
         # Initialize thread_store before super().__init__ if not provided
         if 'thread_store' not in data:
             data['thread_store'] = ThreadStore()
+        
+        # Initialize file_store if not provided
+        if 'file_store' not in data:
+            data['file_store'] = FileStore()
+            
         super().__init__(**data)
         
         # Load tools
@@ -278,7 +285,7 @@ class Agent(Model):
         """
         completion_params = {
             "model": self.model_name,
-            "messages": thread.get_messages_for_chat_completion(),
+            "messages": await thread.get_messages_for_chat_completion(file_store=self.file_store),
             "temperature": self.temperature,
             "stream": stream
         }

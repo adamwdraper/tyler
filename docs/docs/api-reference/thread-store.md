@@ -57,16 +57,25 @@ TYLER_DB_MAX_OVERFLOW=20    # Max additional connections
 Save a thread to storage.
 
 ```python
-async def save(self, thread: Thread) -> Thread
+async def save(self, thread: Thread, file_store: Optional[FileStore] = None) -> Thread
 ```
 
-Creates or updates thread and all messages. Returns saved thread.
+Creates or updates thread and all messages. Returns saved thread. If the thread contains messages with attachments, a file_store instance must be provided to process them.
 
 Example:
 ```python
 thread = Thread()
 thread.add_message(Message(role="user", content="Hello"))
 saved_thread = await store.save(thread)
+
+# With file attachment
+message = Message(role="user", content="Here's a document")
+message.add_attachment(pdf_bytes, filename="document.pdf")
+thread.add_message(message)
+
+# FileStore needed when attachments are present
+file_store = await FileStore.create()
+saved_thread = await store.save(thread, file_store=file_store)
 ```
 
 ### get
@@ -334,8 +343,11 @@ store = await ThreadStore.create("sqlite+aiosqlite:///path/to/db.sqlite")
    message.add_attachment(file_bytes, filename="document.pdf")
    thread.add_message(message)
    
-   # Save will process and store all attachments
-   await store.save(thread)
+   # Need to create and pass a FileStore to process attachments
+   file_store = await FileStore.create()
+   
+   # Save with file_store to process and store all attachments
+   await store.save(thread, file_store=file_store)
    ```
 
 7. **Environment Variable Configuration**
