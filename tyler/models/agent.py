@@ -284,7 +284,24 @@ class Agent(Model):
         }
         
         if len(self._processed_tools) > 0:
-            completion_params["tools"] = self._processed_tools
+            # Check if using Gemini model and modify tools accordingly
+            if "gemini" in self.model_name.lower():
+                # Create a deep copy of the tools to avoid modifying the originals
+                import copy
+                modified_tools = copy.deepcopy(self._processed_tools)
+                
+                # Remove additionalProperties from all tool parameters
+                for tool in modified_tools:
+                    if "function" in tool and "parameters" in tool["function"]:
+                        params = tool["function"]["parameters"]
+                        if "properties" in params:
+                            for prop_name, prop in params["properties"].items():
+                                if isinstance(prop, dict) and "additionalProperties" in prop:
+                                    del prop["additionalProperties"]
+                
+                completion_params["tools"] = modified_tools
+            else:
+                completion_params["tools"] = self._processed_tools
         
         # Track API call time
         api_start_time = datetime.now(UTC)
@@ -495,6 +512,9 @@ class Agent(Model):
         if new_messages is None:
             new_messages = []
             
+        # Reset iteration count at the beginning of each go call
+        self._iteration_count = 0
+            
         thread = None
         try:
             # Get and initialize thread - let ValueError propagate for thread not found
@@ -689,9 +709,6 @@ class Agent(Model):
                 )
                 thread.add_message(message)
                 new_messages.append(message)
-                
-            # Reset iteration count before returning
-            self._iteration_count = 0
                 
             # Final save at end of processing
             if self.thread_store:
@@ -1120,5 +1137,5 @@ class Agent(Model):
             raise  # Re-raise to ensure error is properly propagated
 
         finally:
-            # Reset iteration count
-            self._iteration_count = 0 
+            # Finally block intentionally left empty
+            pass 

@@ -8,19 +8,38 @@ The `FileStore` class provides a unified interface for storing and retrieving fi
 
 ## Initialization
 
+### Recommended: Factory Pattern
+
 ```python
-from tyler.storage import FileStore, get_file_store
+from tyler.storage import initialize_file_store, FileStore
 
-# Using default configuration
+# Initialize global instance at application startup
+async def startup():
+    # Global singleton for application-wide use
+    await initialize_file_store(
+        base_path="/path/to/files",
+        max_file_size=100 * 1024 * 1024,  # 100MB
+        max_storage_size=10 * 1024 * 1024 * 1024  # 10GB
+    )
+    
+# Or create individual instances
+store = await FileStore.create("/path/to/custom/files")
+```
+
+The factory pattern immediately validates storage access, allowing your application to:
+- Fail fast if storage isn't accessible
+- Validate configuration at startup
+- Ensure storage is ready for use
+
+### Global Instance Access
+
+After initialization, use `get_file_store()` to access the global instance:
+
+```python
+from tyler.storage import get_file_store
+
+# Get the initialized global instance
 file_store = get_file_store()
-
-# Custom configuration
-file_store = FileStore(
-    base_path="/path/to/files",
-    max_file_size=100 * 1024 * 1024,  # 100MB
-    max_storage_size=10 * 1024 * 1024 * 1024,  # 10GB
-    allowed_mime_types={"application/pdf", "image/jpeg", "text/plain"}
-)
 ```
 
 ### Parameters
@@ -135,6 +154,38 @@ async def delete(
 #### Exceptions
 
 - `FileNotFoundError`: If file cannot be found
+
+### create
+
+Factory method to create and validate a FileStore instance.
+
+```python
+@classmethod
+async def create(
+    cls,
+    base_path: Optional[str] = None,
+    max_file_size: Optional[int] = None,
+    allowed_mime_types: Optional[Set[str]] = None,
+    max_storage_size: Optional[int] = None
+) -> FileStore
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `base_path` | Optional[str] | No | None | Base directory for file storage |
+| `max_file_size` | Optional[int] | No | None | Maximum allowed file size in bytes |
+| `allowed_mime_types` | Optional[Set[str]] | No | None | Set of allowed MIME types |
+| `max_storage_size` | Optional[int] | No | None | Maximum total storage size in bytes |
+
+#### Returns
+
+Initialized FileStore instance.
+
+#### Exceptions
+
+- `FileStoreError`: If storage directory cannot be created or accessed
 
 ### validate_file
 

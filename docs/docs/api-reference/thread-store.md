@@ -11,24 +11,20 @@ The `ThreadStore` class provides a unified interface for thread storage with plu
 ```python
 from tyler.database.thread_store import ThreadStore
 
-# In-memory storage (default when no configuration is provided)
-store = ThreadStore()
+# PostgreSQL
+store = await ThreadStore.create("postgresql+asyncpg://user:pass@localhost/dbname")
 
-# Environment variable configuration
-# Set TYLER_DB_TYPE to 'postgresql' or 'sqlite'
-# For PostgreSQL, also set TYLER_DB_HOST, TYLER_DB_PORT, TYLER_DB_NAME, TYLER_DB_USER, TYLER_DB_PASSWORD
-# For SQLite, also set TYLER_DB_PATH
-store = ThreadStore()
+# SQLite
+store = await ThreadStore.create("sqlite+aiosqlite:///path/to/db.sqlite")
 
-# Explicit PostgreSQL configuration
-store = ThreadStore("postgresql+asyncpg://user:pass@localhost/dbname")
-
-# Explicit SQLite configuration
-store = ThreadStore("sqlite+aiosqlite:///path/to/db.sqlite")
-
-# Use with agent
-agent = Agent(thread_store=store)
+# In-memory
+store = await ThreadStore.create()  # No URL for memory backend
 ```
+
+The factory pattern immediately connects to the database, allowing you to:
+- Validate connection parameters early
+- Fail fast if there are connection problems
+- Ensure the store is fully ready to use
 
 ### Configuration
 
@@ -56,23 +52,6 @@ TYLER_DB_MAX_OVERFLOW=20    # Max additional connections
 
 ## Methods
 
-### initialize
-
-Initialize the storage backend.
-
-```python
-async def initialize(self) -> None
-```
-
-This method is called automatically when needed, so you typically don't need to call it explicitly. It's available for cases where you want more control over initialization timing.
-
-Example:
-```python
-# Explicit initialization (rarely needed)
-store = ThreadStore("postgresql+asyncpg://...")
-await store.initialize()
-```
-
 ### save
 
 Save a thread to storage.
@@ -81,13 +60,13 @@ Save a thread to storage.
 async def save(self, thread: Thread) -> Thread
 ```
 
-Creates or updates thread and all messages. Returns saved thread. Automatically initializes the storage backend if needed.
+Creates or updates thread and all messages. Returns saved thread.
 
 Example:
 ```python
 thread = Thread()
 thread.add_message(Message(role="user", content="Hello"))
-saved_thread = await store.save(thread)  # Initializes automatically if needed
+saved_thread = await store.save(thread)
 ```
 
 ### get
@@ -98,11 +77,11 @@ Get a thread by ID.
 async def get(self, thread_id: str) -> Optional[Thread]
 ```
 
-Returns thread with all messages if found, None otherwise. Automatically initializes the storage backend if needed.
+Returns thread with all messages if found, None otherwise.
 
 Example:
 ```python
-thread = await store.get("thread_123")  # Initializes automatically if needed
+thread = await store.get("thread_123")
 if thread:
     print(f"Found {len(thread.messages)} messages")
 ```
@@ -115,11 +94,11 @@ Delete a thread by ID.
 async def delete(self, thread_id: str) -> bool
 ```
 
-Returns True if thread was deleted, False if not found. Automatically initializes the storage backend if needed.
+Returns True if thread was deleted, False if not found.
 
 Example:
 ```python
-if await store.delete("thread_123"):  # Initializes automatically if needed
+if await store.delete("thread_123"):
     print("Thread deleted")
 ```
 
@@ -135,11 +114,11 @@ async def list(
 ) -> List[Thread]
 ```
 
-Returns threads sorted by updated_at/created_at. Automatically initializes the storage backend if needed.
+Returns threads sorted by updated_at/created_at.
 
 Example:
 ```python
-# Get first page (initializes automatically if needed)
+# Get first page
 threads = await store.list(limit=50, offset=0)
 
 # Get next page
@@ -157,11 +136,10 @@ async def find_by_attributes(
 ) -> List[Thread]
 ```
 
-Returns threads where all specified attributes match. Automatically initializes the storage backend if needed.
+Returns threads where all specified attributes match.
 
 Example:
 ```python
-# Initializes automatically if needed
 threads = await store.find_by_attributes({
     "customer_id": "123",
     "priority": "high"
@@ -180,11 +158,10 @@ async def find_by_source(
 ) -> List[Thread]
 ```
 
-Returns threads matching source name and properties. Automatically initializes the storage backend if needed.
+Returns threads matching source name and properties.
 
 Example:
 ```python
-# Initializes automatically if needed
 threads = await store.find_by_source(
     "slack",
     {
@@ -205,11 +182,11 @@ async def list_recent(
 ) -> List[Thread]
 ```
 
-Returns threads sorted by updated_at/created_at (newest first). Automatically initializes the storage backend if needed.
+Returns threads sorted by updated_at/created_at (newest first).
 
 Example:
 ```python
-# Get 10 most recent threads (initializes automatically if needed)
+# Get 10 most recent threads
 recent = await store.list_recent(limit=10)
 ```
 
@@ -256,7 +233,7 @@ In-memory storage for development and testing.
 
 ```python
 # Uses memory backend by default when no configuration is provided
-store = ThreadStore()
+store = await ThreadStore.create()  # No URL creates memory backend
 ```
 
 ### SQLBackend
@@ -265,48 +242,56 @@ SQL-based storage for production use.
 
 ```python
 # PostgreSQL
-store = ThreadStore("postgresql+asyncpg://user:pass@localhost/dbname")
+store = await ThreadStore.create("postgresql+asyncpg://user:pass@localhost/dbname")
 
 # SQLite
-store = ThreadStore("sqlite+aiosqlite:///path/to/db.sqlite")
+store = await ThreadStore.create("sqlite+aiosqlite:///path/to/db.sqlite")
 ```
 
 ## Best Practices
 
-1. **Lazy Initialization**
+1. **Connect at Startup**
    ```python
-   # Let ThreadStore initialize automatically (recommended)
-   store = ThreadStore(db_url)
-   thread = await store.get(thread_id)  # Initializes automatically
-   
-   # Explicit initialization (only if you need control over timing)
-   store = ThreadStore(db_url)
-   await store.initialize()
+   # Connect and validate at startup
+   try:
+       store = await ThreadStore.create("postgresql+asyncpg://user:pass@host/dbname")
+       print("Database connection established")
+   except Exception as e:
+       print(f"Database connection failed: {e}")
+       # Handle the error appropriately (e.g., exit application or use fallback)
    ```
 
 2. **Backend Selection**
    ```python
    # For development/testing
-   store = ThreadStore()  # In-memory
+   store = await ThreadStore.create()  # In-memory
    
    # For local development with persistence
-   store = ThreadStore("sqlite+aiosqlite:///app.db")
+   store = await ThreadStore.create("sqlite+aiosqlite:///app.db")
    
    # For production
-   store = ThreadStore("postgresql+asyncpg://user:pass@host/dbname")
+   store = await ThreadStore.create("postgresql+asyncpg://user:pass@host/dbname")
    
    # Using environment variables
    # Set TYLER_DB_TYPE and other required variables
-   store = ThreadStore()
+   store = await ThreadStore.create()  # Will use configured database type
    ```
 
 3. **Error Handling**
    ```python
    try:
+       # Connect at startup for early error detection
+       store = await ThreadStore.create("postgresql+asyncpg://user:pass@host/dbname")
+   except Exception as e:
+       print(f"Database connection failed: {e}")
+       # Handle startup error
+       
+   try:
+       # Handle operation errors
        thread = await store.get(thread_id)
    except Exception as e:
-       print(f"Database error: {e}")
-       # Handle error appropriately
+       print(f"Database operation error: {e}")
+       # Handle operation error
    ```
 
 4. **Batch Operations**
@@ -333,7 +318,7 @@ store = ThreadStore("sqlite+aiosqlite:///path/to/db.sqlite")
            "thread_ts": "123.456"
        }
    )
-   await store.save(thread)  # Initializes automatically if needed
+   await store.save(thread)
    
    # Find related threads
    related = await store.find_by_source(
@@ -350,7 +335,7 @@ store = ThreadStore("sqlite+aiosqlite:///path/to/db.sqlite")
    thread.add_message(message)
    
    # Save will process and store all attachments
-   await store.save(thread)  # Initializes automatically if needed
+   await store.save(thread)
    ```
 
 7. **Environment Variable Configuration**
@@ -364,7 +349,7 @@ store = ThreadStore("sqlite+aiosqlite:///path/to/db.sqlite")
    os.environ["TYLER_DB_PASSWORD"] = "password"
    
    # Create store using environment variables
-   store = ThreadStore()  # Will use PostgreSQL with the configured settings
+   store = await ThreadStore.create()  # Will connect to PostgreSQL
    ```
 
 ## See Also
