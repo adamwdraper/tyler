@@ -90,7 +90,14 @@ class ThreadStore:
         store = cls(database_url)
         
         # Initialize immediately
-        await store.initialize()
+        try:
+            await store.initialize()
+        except Exception as e:
+            # If a database URL was provided but initialization failed, we should raise the error
+            # instead of silently falling back to memory storage
+            if database_url is not None:
+                raise RuntimeError(f"Failed to initialize database with URL {database_url}: {str(e)}") from e
+            raise
         
         return store
     
