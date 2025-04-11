@@ -429,12 +429,12 @@ async def test_thread_store_pagination():
 @pytest.mark.asyncio
 async def test_message_sequence_preservation(thread_store):
     """Test that message sequences are preserved correctly in database"""
-    # Create a thread with system and non-system messages
+    # Create a thread with multiple messages
     thread = Thread(id="test-thread")
     thread.add_message(Message(role="user", content="First user message"))
     thread.add_message(Message(role="assistant", content="First assistant message"))
-    thread.add_message(Message(role="system", content="System message"))
     thread.add_message(Message(role="user", content="Second user message"))
+    thread.add_message(Message(role="assistant", content="Second assistant message"))
     
     # Save thread
     await thread_store.save(thread)
@@ -444,18 +444,21 @@ async def test_message_sequence_preservation(thread_store):
     
     # Verify sequences
     assert len(loaded_thread.messages) == 4
-    assert loaded_thread.messages[0].role == "system"
-    assert loaded_thread.messages[0].sequence == 0
+    assert loaded_thread.messages[0].role == "user"
+    assert loaded_thread.messages[0].sequence == 1
+    assert loaded_thread.messages[0].content == "First user message"
     
-    # Get non-system messages in order
-    non_system = [m for m in loaded_thread.messages if m.role != "system"]
-    assert len(non_system) == 3
-    assert non_system[0].content == "First user message"
-    assert non_system[0].sequence == 1
-    assert non_system[1].content == "First assistant message"
-    assert non_system[1].sequence == 2
-    assert non_system[2].content == "Second user message"
-    assert non_system[2].sequence == 3
+    assert loaded_thread.messages[1].role == "assistant"
+    assert loaded_thread.messages[1].sequence == 2
+    assert loaded_thread.messages[1].content == "First assistant message"
+    
+    assert loaded_thread.messages[2].role == "user"
+    assert loaded_thread.messages[2].sequence == 3
+    assert loaded_thread.messages[2].content == "Second user message"
+    
+    assert loaded_thread.messages[3].role == "assistant"
+    assert loaded_thread.messages[3].sequence == 4
+    assert loaded_thread.messages[3].content == "Second assistant message"
 
 @pytest.mark.asyncio
 async def test_save_thread_with_attachments(thread_store):

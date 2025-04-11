@@ -83,7 +83,32 @@ Return messages in the format expected by chat completion APIs.
 async def get_messages_for_chat_completion(self, file_store: Optional[FileStore] = None) -> List[Dict[str, Any]]
 ```
 
-Returns messages formatted for LLM completion, including proper sequencing and any file references. If messages have attachments, file_store is required to access their content.
+This method returns all non-system messages from the thread in the format required by chat completion APIs. System messages stored in the thread are intentionally skipped, as system prompts are now handled ephemerally by agent classes at completion time.
+
+**Parameters:**
+- `file_store`: Optional FileStore instance to pass to messages for file URL access.
+
+**Returns:**
+- A list of message dictionaries in the format expected by completion APIs.
+
+**Example:**
+
+```python
+# Get messages for completion
+messages = await thread.get_messages_for_chat_completion()
+
+# Agents will typically add system prompts at completion time
+system_prompt = "You are a helpful assistant."
+completion_messages = [{"role": "system", "content": system_prompt}] + messages
+
+# Use with completion API
+response = await litellm.acompletion(
+    model="gpt-4",
+    messages=completion_messages
+)
+```
+
+**Note:** This method intentionally skips any system messages stored in the thread. In the current architecture, system prompts are handled ephemerally by the agent classes and injected at completion time, rather than being stored in the thread.
 
 ### clear_messages
 

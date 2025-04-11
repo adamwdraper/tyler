@@ -62,36 +62,24 @@ class Thread(BaseModel):
             "source": self.source
         }
     
-    def ensure_system_prompt(self, prompt: str) -> None:
-        """Ensures a system prompt exists as the first message in the thread.
-        
-        If no system message exists at the start of the thread, adds one.
-        Does not modify any existing system messages.
-        """
-        if not self.messages or self.messages[0].role != "system":
-            self.add_message(Message(role="system", content=prompt))
-
     def add_message(self, message: Message) -> None:
         """Add a new message to the thread and update analytics"""
-        # Set message sequence - system messages always get 0, others get next available number starting at 1
-        if message.role == "system":
-            message.sequence = 0
-            # Insert at beginning to maintain system message first
-            self.messages.insert(0, message)
-        else:
-            # Find highest sequence number and increment
-            max_sequence = max((m.sequence for m in self.messages if m.role != "system"), default=0)
-            message.sequence = max_sequence + 1
-            self.messages.append(message)
-        
+        # Assign next available sequence number
+        max_sequence = max((m.sequence for m in self.messages), default=0)
+        message.sequence = max_sequence + 1
+        self.messages.append(message)
         self.updated_at = datetime.now(UTC)
 
-    async def get_messages_for_chat_completion(self, file_store: Optional[FileStore] = None) -> List[Dict[str, Any]]:
+    def get_messages_for_chat_completion(self, file_store: Optional[FileStore] = None) -> List[Dict[str, Any]]:
         """Return messages in the format expected by chat completion APIs
         
         Args:
             file_store: Optional FileStore instance to pass to messages for file URL access
+            
+        Returns:
+            List of messages in chat completion format
         """
+        # Return all messages (no need to skip system messages anymore)
         return [msg.to_chat_completion_message(file_store=file_store) for msg in self.messages]
 
     def clear_messages(self) -> None:
@@ -99,7 +87,7 @@ class Thread(BaseModel):
         self.messages = []
         self.updated_at = datetime.now(UTC)
 
-    def get_last_message_by_role(self, role: Literal["user", "assistant", "system", "tool"]) -> Optional[Message]:
+    def get_last_message_by_role(self, role: Literal["user", "assistant", "tool"]) -> Optional[Message]:
         """Return the last message with the specified role, or None if no messages exist with that role"""
         messages = [m for m in self.messages if m.role == role]
         return messages[-1] if messages else None
@@ -249,10 +237,9 @@ class Thread(BaseModel):
         """Get count of messages by role
         
         Returns:
-            Dictionary with counts for each role (system, user, assistant, tool)
+            Dictionary with counts for each role (user, assistant, tool)
         """
         counts = {
-            "system": 0,
             "user": 0,
             "assistant": 0,
             "tool": 0
@@ -289,13 +276,6 @@ class Thread(BaseModel):
             "tools": tool_counts,
             "total_calls": sum(tool_counts.values())
         }
-
-    def get_system_message(self) -> Optional[Message]:
-        """Get the system message from the thread if it exists"""
-        for message in self.messages:
-            if message.role == "system":
-                return message
-        return None
 
     def get_messages_in_sequence(self) -> List[Message]:
         """Get messages sorted by sequence number"""

@@ -25,10 +25,10 @@ class TextContent(TypedDict):
 class Message(BaseModel):
     """Represents a single message in a thread"""
     id: str = None  # Will be set in __init__
-    role: Literal["system", "user", "assistant", "tool"]
+    role: Literal["user", "assistant", "tool"]
     sequence: Optional[int] = Field(
         default=None,
-        description="Message sequence number within thread. System messages get lowest sequences."
+        description="Message sequence number within thread."
     )
     content: Optional[Union[str, List[Union[TextContent, ImageContent]]]] = None
     name: Optional[str] = None
@@ -36,7 +36,38 @@ class Message(BaseModel):
     tool_calls: Optional[list] = None  # For assistant messages
     attributes: Dict = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    source: Optional[Dict[str, Any]] = None  # {"name": "slack", "thread_id": "..."}
+    source: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="""
+        Entity attribution for who created this message.
+        Enhanced structure:
+        {
+            "id": "entity-id",            # Unique ID of the entity
+            "name": "entity-name",        # Display name of the entity
+            "type": "user|agent|tool",    # Type of entity
+            
+            # Optional entity-specific attributes:
+            # For users:
+            "email": "user@example.com",  # User's email
+            "user_id": "U12345",          # Platform-specific user ID
+            
+            # For agents:
+            "model": "gpt-4o",            # Model used by the agent
+            "purpose": "HR assistant",    # Purpose of the agent
+            "version": "1.0",             # Agent version
+            
+            # For tools:
+            "agent_id": "perci-v1.0",     # ID of agent that invoked the tool
+            
+            # Optional platform info:
+            "platform": {
+                "name": "slack",          # Platform name (slack, web, api, etc.)
+                "thread_ts": "123.456",   # Platform-specific thread ID
+                "channel": "C123"         # Other platform-specific attributes
+            }
+        }
+        """
+    )
     attachments: List[Attachment] = Field(default_factory=list)
     
     # Simple metrics structure
@@ -70,8 +101,8 @@ class Message(BaseModel):
     @field_validator("role")
     def validate_role(cls, v):
         """Validate role field"""
-        if v not in ["system", "user", "assistant", "tool"]:
-            raise ValueError("Invalid role. Must be one of: system, user, assistant, tool")
+        if v not in ["user", "assistant", "tool"]:
+            raise ValueError("Invalid role. Must be one of: user, assistant, tool")
         return v
 
     @model_validator(mode='after')

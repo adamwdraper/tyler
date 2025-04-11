@@ -10,6 +10,7 @@ from datetime import datetime, UTC
 from tyler.models.thread import Thread
 from tyler.models.message import Message
 from tyler.utils.logging import get_logger
+import traceback
 
 # Get configured logger
 logger = get_logger(__name__)
@@ -19,143 +20,108 @@ class AgentRunner:
     
     def __init__(self):
         """Initialize the agent runner."""
-        self.agents = {}  # name -> Agent
+        self._agents = {}  # Maps agent name -> agent instance
         
-    def register_agent(self, name: str, agent) -> None:
+    def register_agent(self, name: str, agent: Any) -> None:
         """
-        Register an agent with the registry.
+        Register an agent with the runner.
         
         Args:
-            name: Unique name for the agent
-            agent: The agent instance to register
+            name: Name to register the agent under
+            agent: Agent instance to register
         """
-        if name in self.agents:
-            logger.warning(f"Agent '{name}' already registered. Overwriting.")
-        
-        self.agents[name] = agent
-        logger.info(f"Registered agent: {name}")
+        if name in self._agents:
+            logger.warning(f"Overwriting existing agent with name '{name}'")
+        self._agents[name] = agent
+        logger.info(f"Registered agent '{name}'")
         
     def list_agents(self) -> List[str]:
         """Return a list of registered agent names."""
-        return list(self.agents.keys())
+        return list(self._agents.keys())
         
-    def get_agent(self, name: str):
+    def get_agent(self, name: str) -> Optional[Any]:
         """
-        Get an agent by name.
+        Get a registered agent by name.
         
         Args:
-            name: The name of the agent to retrieve
+            name: Name of the agent to retrieve
             
         Returns:
-            The agent instance or None if not found
+            The agent instance, or None if not found
         """
-        return self.agents.get(name)
+        return self._agents.get(name)
     
     @weave.op()
-    async def run_agent(self, agent_name: str, task: str, context: Optional[Dict[str, Any]] = None) -> Tuple[str, Dict[str, Any]]:
+    async def run_agent(self, name: str, task: str, context: Optional[Dict[str, Any]] = None) -> Tuple[Any, Dict]:
         """
-        Run an agent on a task with weave tracking.
+        Run an agent with a specific task.
         
         Args:
-            agent_name: The name of the agent to run
-            task: The task to run the agent on
-            context: Optional context to provide to the agent
+            name: Name of the agent to run
+            task: Task description or instruction for the agent
+            context: Optional dictionary of context information
             
         Returns:
-            Tuple containing the agent's response and execution metrics
+            Tuple of (response_text, metrics)
             
         Raises:
-            ValueError: If the agent is not found
+            ValueError: If agent not found
+            Exception: For any other errors during execution
         """
-        # Track execution time
-        start_time = datetime.now(UTC)
-        
-        # Get the agent
-        agent = self.get_agent(agent_name)
+        agent = self.get_agent(name)
         if not agent:
-            raise ValueError(f"Agent '{agent_name}' not found")
+            raise ValueError(f"Agent '{name}' not found")
         
-        # Create a new thread for the agent
+        # Create a temporary thread for the task
         thread = Thread()
         
-        # Add context as a system message if provided
-        if context:
-            context_content = "Context information:\n"
-            for key, value in context.items():
-                context_content += f"- {key}: {value}\n"
-            thread.add_message(Message(
-                role="system",
-                content=context_content
-            ))
-        
         # Add the task as a user message
-        thread.add_message(Message(
+        user_message = Message(
             role="user",
-            content=task
-        ))
+            content=task,
+            source={
+                "id": "agent_runner",
+                "name": "AgentRunner",
+                "type": "tool"
+            }
+        )
+        thread.add_message(user_message)
+        
+        # Add context if provided (as a user message)
+        if context:
+            context_str = f"Here is additional context that may be helpful:\n{context}"
+            context_message = Message(
+                role="user", 
+                content=context_str,
+                source={
+                    "id": "agent_runner",
+                    "name": "AgentRunner",
+                    "type": "tool"
+                }
+            )
+            thread.add_message(context_message)
         
         # Execute the agent
-        logger.info(f"Running agent {agent_name} with task: {task}")
+        logger.info(f"Running agent '{name}' with task: {task[:50]}...")
         try:
-            result_thread, messages = await agent.go(thread)
+            result_thread, new_messages = await agent.go(thread)
             
-            # Format the response (just the assistant messages)
-            response = "\n\n".join([
-                m.content for m in messages 
-                if m.role == "assistant" and m.content
-            ])
+            # Get the last assistant message
+            assistant_messages = [m for m in new_messages if m.role == "assistant"]
+            if not assistant_messages:
+                logger.warning(f"Agent '{name}' did not generate any assistant messages")
+                return "No response generated.", {}
             
-            # Calculate execution time and create metrics
-            end_time = datetime.now(UTC)
-            execution_time = (end_time - start_time).total_seconds() * 1000  # Convert to milliseconds
+            # Get the final response and metrics
+            response = assistant_messages[-1].content
+            metrics = getattr(assistant_messages[-1], 'metrics', {})
             
-            metrics = {
-                "agent_name": agent_name,
-                "timing": {
-                    "started_at": start_time.isoformat(),
-                    "ended_at": end_time.isoformat(),
-                    "latency": execution_time
-                },
-                "task_length": len(task),
-                "response_length": len(response),
-                "message_count": len(messages)
-            }
-            
-            # Extract model metrics if available in the messages
-            model_metrics = {}
-            for message in messages:
-                if hasattr(message, 'metrics') and message.metrics:
-                    if 'model' in message.metrics:
-                        model_metrics['model'] = message.metrics['model']
-                    if 'usage' in message.metrics:
-                        model_metrics['usage'] = message.metrics['usage']
-                    # Only need to get this once
-                    if model_metrics:
-                        break
-                        
-            if model_metrics:
-                metrics['model'] = model_metrics
-            
-            logger.info(f"Agent {agent_name} completed task in {execution_time:.2f}ms")
             return response, metrics
             
         except Exception as e:
-            # Record error in metrics
-            end_time = datetime.now(UTC)
-            execution_time = (end_time - start_time).total_seconds() * 1000
-            
-            error_metrics = {
-                "agent_name": agent_name,
-                "timing": {
-                    "started_at": start_time.isoformat(),
-                    "ended_at": end_time.isoformat(),
-                    "latency": execution_time
-                },
-                "error": str(e)
-            }
-            
-            logger.error(f"Error running agent {agent_name}: {str(e)}")
-            raise ValueError(f"Error running agent '{agent_name}': {str(e)}") from e
+            logger.error(f"Error running agent '{name}': {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
 
-# Create a shared instance
+# Create a singleton instance
 agent_runner = AgentRunner() 

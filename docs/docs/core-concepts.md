@@ -915,4 +915,48 @@ agent = Agent(
 
 - See [Examples](./category/examples) for practical usage
 - Learn about [Configuration](./configuration.md)
-- Explore [API reference](./category/api-reference) 
+- Explore [API reference](./category/api-reference)
+
+# System Prompts
+
+System prompts define the behavior and capabilities of an agent. In Tyler, system prompts are handled ephemerally at completion time, rather than being stored in the thread. This allows multiple agents with different purposes to process the same thread without conflicting system prompts.
+
+Each agent has a `purpose` property that defines its primary function, which is used to generate its system prompt. The agent injects this system prompt at completion time without modifying the thread's stored messages.
+
+```python
+# Agent definition
+agent = Agent(
+    name="HR Assistant",
+    model_name="gpt-4o",
+    purpose="You are an HR assistant that helps employees with policy questions."
+)
+
+# When the agent processes a thread, it automatically adds its system prompt
+# at completion time, without modifying the thread's stored messages
+response, new_messages = await agent.go(thread_id)
+```
+
+# Message Attribution
+
+Messages in Tyler include attribution information to track which entity (user, agent, or tool) created each message. This attribution is stored in the `source` field of the message:
+
+```python
+message.source = {
+    "id": "perci-agent-123",
+    "name": "Perci", 
+    "type": "agent",
+    "model": "gpt-4o",
+    "purpose": "HR assistant",
+    "platform": {  # Optional for platform-specific details
+        "name": "slack",
+        "thread_ts": "1234567890.123456"
+    }
+}
+```
+
+This attribution allows for:
+- Tracking which agent generated each message
+- Associating tool messages with the agent that invoked them
+- Maintaining user identity information consistently
+
+When multiple agents process the same thread, each agent's messages are properly attributed, making it clear which agent was responsible for each response. 

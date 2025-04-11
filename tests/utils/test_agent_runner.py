@@ -34,8 +34,8 @@ async def test_register_agent(agent_runner_instance, mock_agent):
     agent_runner_instance.register_agent(mock_agent.name, mock_agent)
     
     # Verify agent is registered
-    assert mock_agent.name in agent_runner_instance.agents
-    assert agent_runner_instance.agents[mock_agent.name] == mock_agent
+    assert mock_agent.name in agent_runner_instance.list_agents()
+    assert agent_runner_instance.get_agent(mock_agent.name) == mock_agent
 
 @pytest.mark.asyncio
 async def test_register_duplicate_agent(agent_runner_instance, mock_agent):
@@ -51,8 +51,8 @@ async def test_register_duplicate_agent(agent_runner_instance, mock_agent):
     agent_runner_instance.register_agent(second_agent.name, second_agent)
     
     # Verify the second agent replaced the first
-    assert mock_agent.name in agent_runner_instance.agents
-    assert agent_runner_instance.agents[mock_agent.name] == second_agent
+    assert mock_agent.name in agent_runner_instance.list_agents()
+    assert agent_runner_instance.get_agent(mock_agent.name) == second_agent
 
 @pytest.mark.asyncio
 async def test_list_agents(agent_runner_instance, mock_agent):
@@ -110,9 +110,6 @@ async def test_run_agent(agent_runner_instance, mock_agent):
     
     # Verify metrics were returned
     assert isinstance(metrics, dict)
-    assert "agent_name" in metrics
-    assert metrics["agent_name"] == mock_agent.name
-    assert "timing" in metrics
 
 @pytest.mark.asyncio
 async def test_run_agent_with_context(agent_runner_instance, mock_agent):
@@ -132,14 +129,12 @@ async def test_run_agent_with_context(agent_runner_instance, mock_agent):
     
     # Verify metrics were returned
     assert isinstance(metrics, dict)
-    assert "agent_name" in metrics
-    assert metrics["agent_name"] == mock_agent.name
     
-    # Verify thread contains system message with context
+    # Verify thread contains context as a user message
     thread = mock_agent.go.call_args[0][0]
-    system_messages = [m for m in thread.messages if m.role == "system"]
-    assert len(system_messages) == 1
-    assert "key: value" in system_messages[0].content
+    context_messages = [m for m in thread.messages if m.role == "user" and "additional context" in m.content.lower()]
+    assert len(context_messages) == 1
+    assert "key: value" in context_messages[0].content
 
 @pytest.mark.asyncio
 async def test_run_nonexistent_agent(agent_runner_instance):

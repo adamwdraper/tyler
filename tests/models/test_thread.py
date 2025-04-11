@@ -16,7 +16,7 @@ def sample_thread():
         attributes={"category": "test"},
         source={"name": "slack", "channel": "general"}
     )
-    thread.add_message(Message(role="system", content="You are a helpful assistant"))
+    # Add messages - they'll get sequence numbers 1 and 2 automatically
     thread.add_message(Message(role="user", content="Hello"))
     thread.add_message(Message(role="assistant", content="Hi there!"))
     return thread
@@ -52,10 +52,9 @@ def test_thread_serialization(sample_thread):
     assert data["title"] == "Test Thread"
     assert data["attributes"] == {"category": "test"}
     assert data["source"] == {"name": "slack", "channel": "general"}
-    assert len(data["messages"]) == 3
-    assert data["messages"][0]["role"] == "system"
-    assert data["messages"][1]["role"] == "user"
-    assert data["messages"][2]["role"] == "assistant"
+    assert len(data["messages"]) == 2
+    assert data["messages"][0]["role"] == "user"
+    assert data["messages"][1]["role"] == "assistant"
     assert isinstance(data["created_at"], str)  # Expect ISO-formatted string
     assert isinstance(data["updated_at"], str)  # Expect ISO-formatted string
     
@@ -79,42 +78,18 @@ def test_thread_serialization(sample_thread):
 @pytest.mark.asyncio
 async def test_get_messages_for_chat_completion(sample_thread):
     """Test getting messages in chat completion format"""
-    messages = await sample_thread.get_messages_for_chat_completion()
-    assert len(messages) == 3
+    messages = sample_thread.get_messages_for_chat_completion()
+    assert len(messages) == 2
     assert messages[0] == {
-        "role": "system",
-        "content": "You are a helpful assistant",
-        "sequence": 0
-    }
-    assert messages[1] == {
         "role": "user",
         "content": "Hello",
         "sequence": 1
     }
-    assert messages[2] == {
+    assert messages[1] == {
         "role": "assistant",
         "content": "Hi there!",
         "sequence": 2
     }
-
-def test_ensure_system_prompt():
-    """Test ensuring system prompt exists"""
-    thread = Thread(id="test-thread")
-    thread.add_message(Message(role="user", content="Hello"))
-    
-    # Add system prompt
-    thread.ensure_system_prompt("You are a helpful assistant")
-    assert len(thread.messages) == 2
-    assert thread.messages[0].role == "system"
-    assert thread.messages[0].content == "You are a helpful assistant"
-    assert thread.messages[0].sequence == 0
-    assert thread.messages[1].role == "user"
-    assert thread.messages[1].sequence == 1
-    
-    # Try adding again - should not duplicate
-    thread.ensure_system_prompt("You are a helpful assistant")
-    assert len(thread.messages) == 2
-    assert thread.messages[0].role == "system"
 
 def test_message_sequencing():
     """Test message sequence numbering"""
@@ -123,28 +98,28 @@ def test_message_sequencing():
     # Add messages in different order
     msg1 = Message(role="user", content="First user message")
     msg2 = Message(role="assistant", content="First assistant message")
-    msg3 = Message(role="system", content="System message")
-    msg4 = Message(role="user", content="Second user message")
+    msg3 = Message(role="user", content="Second user message")
+    msg4 = Message(role="user", content="Third user message")
     
     thread.add_message(msg1)  # Should get sequence 1
     thread.add_message(msg2)  # Should get sequence 2
-    thread.add_message(msg3)  # Should get sequence 0 and move to front
-    thread.add_message(msg4)  # Should get sequence 3
+    thread.add_message(msg3)  # Should get sequence 3
+    thread.add_message(msg4)  # Should get sequence 4
     
     # Verify sequences
     assert len(thread.messages) == 4
-    assert thread.messages[0].role == "system"
-    assert thread.messages[0].sequence == 0
+    assert thread.messages[0].role == "user"
+    assert thread.messages[0].sequence == 1
     
-    # Get non-system messages in order
-    non_system = [m for m in thread.messages if m.role != "system"]
-    assert len(non_system) == 3
-    assert non_system[0].content == "First user message"
-    assert non_system[0].sequence == 1
-    assert non_system[1].content == "First assistant message"
-    assert non_system[1].sequence == 2
-    assert non_system[2].content == "Second user message"
-    assert non_system[2].sequence == 3
+    # Get messages in order
+    assert thread.messages[0].content == "First user message"
+    assert thread.messages[0].sequence == 1
+    assert thread.messages[1].content == "First assistant message"
+    assert thread.messages[1].sequence == 2
+    assert thread.messages[2].content == "Second user message"
+    assert thread.messages[2].sequence == 3
+    assert thread.messages[3].content == "Third user message"
+    assert thread.messages[3].sequence == 4
 
 def test_thread_with_attachments():
     """Test thread with message attachments"""
@@ -428,14 +403,12 @@ def test_get_message_counts():
     thread = Thread(id="test-thread")
     
     # Add messages with different roles
-    thread.add_message(Message(role="system", content="System message"))
     thread.add_message(Message(role="user", content="User message 1"))
     thread.add_message(Message(role="user", content="User message 2"))
     thread.add_message(Message(role="assistant", content="Assistant message"))
     thread.add_message(Message(role="tool", content="Tool message", tool_call_id="123"))
     
     counts = thread.get_message_counts()
-    assert counts["system"] == 1
     assert counts["user"] == 2
     assert counts["assistant"] == 1
     assert counts["tool"] == 1

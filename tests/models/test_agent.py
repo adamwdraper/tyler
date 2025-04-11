@@ -170,7 +170,7 @@ async def test_go_no_tool_calls(agent, mock_thread_store, mock_prompt, mock_lite
     thread = Thread(id="test-conv", title="Test Thread")
     mock_prompt.system_prompt.return_value = "Test system prompt"
     thread.messages = []
-    thread.ensure_system_prompt("Test system prompt")
+    # System prompt is now handled by the agent
     mock_thread_store.get.return_value = thread
     agent._iteration_count = 0
 
@@ -200,10 +200,9 @@ async def test_go_no_tool_calls(agent, mock_thread_store, mock_prompt, mock_lite
 
     result_thread, new_messages = await agent.go("test-conv")
 
-    assert result_thread.messages[0].role == "system"
-    assert result_thread.messages[0].content == "Test system prompt"
-    assert result_thread.messages[1].role == "assistant"
-    assert result_thread.messages[1].content == "Test response"
+    # We no longer expect a system message in the thread
+    assert result_thread.messages[0].role == "assistant"
+    assert result_thread.messages[0].content == "Test response"
     assert len(new_messages) == 1
     assert new_messages[0].role == "assistant"
     assert "metrics" in new_messages[0].model_dump()
@@ -218,7 +217,7 @@ async def test_go_with_tool_calls(agent, mock_thread_store, mock_prompt, mock_li
     thread = Thread(id="test-conv", title="Test Thread")
     mock_prompt.system_prompt.return_value = "Test system prompt"
     thread.messages = []
-    thread.ensure_system_prompt("Test system prompt")
+    # System prompt is now handled by the agent
     mock_thread_store.get.return_value = thread
     agent._iteration_count = 0
 
@@ -286,17 +285,16 @@ async def test_go_with_tool_calls(agent, mock_thread_store, mock_prompt, mock_li
 
             result_thread, new_messages = await agent.go("test-conv")
 
-    # Verify the sequence of messages
+    # Verify the sequence of messages (no system message in thread)
     messages = result_thread.messages
-    assert len(messages) == 4  # system, assistant with tool call, tool result, final assistant
-    assert messages[0].role == "system"
-    assert messages[1].role == "assistant"
-    assert messages[1].tool_calls is not None
-    assert messages[2].role == "tool"
-    assert messages[2].tool_call_id == "test-call-id"
-    assert messages[2].content == "{'name': 'test-tool', 'content': 'Tool result'}"
-    assert messages[3].role == "assistant"
-    assert messages[3].content == "Here's what I found"
+    assert len(messages) == 3  # assistant with tool call, tool result, final assistant
+    assert messages[0].role == "assistant"
+    assert messages[0].tool_calls is not None
+    assert messages[1].role == "tool"
+    assert messages[1].tool_call_id == "test-call-id"
+    assert messages[1].content == "{'name': 'test-tool', 'content': 'Tool result'}"
+    assert messages[2].role == "assistant"
+    assert messages[2].content == "Here's what I found"
 
 @pytest.mark.asyncio
 async def test_init_with_tools(mock_thread_store, mock_prompt, mock_litellm, mock_file_processor, mock_openai):
@@ -425,7 +423,7 @@ async def test_step_error(agent):
 async def test_step_no_weave(agent):
     """Test step metrics when weave call info is not available"""
     thread = Thread(id="test-thread")
-    thread.messages = [Message(role="system", content="Test system prompt")]  # Add system message
+    thread.messages = [Message(role="user", content="Test question")]  # Use user message instead of system
 
     # Create a mock response without weave call info
     mock_response = ModelResponse(**{
@@ -569,7 +567,7 @@ async def test_go_with_weave_metrics(agent, mock_thread_store, mock_prompt):
     """Test go() with weave metrics tracking"""
     thread = Thread(id="test-conv", title="Test Thread")
     thread.messages = []
-    thread.ensure_system_prompt("Test system prompt")
+    # System prompt is now handled by the agent
     mock_thread_store.get.return_value = thread
     
     # Create a mock weave call with metrics
@@ -651,7 +649,7 @@ async def test_go_with_multiple_tool_call_iterations(agent, mock_thread_store, m
     thread = Thread(id="test-conv", title="Test Thread")
     mock_prompt.system_prompt.return_value = "Test system prompt"
     thread.messages = []
-    thread.ensure_system_prompt("Test system prompt")
+    # System prompt is now handled by the agent
     mock_thread_store.get.return_value = thread
     agent._iteration_count = 0
 
@@ -789,22 +787,21 @@ async def test_go_with_multiple_tool_call_iterations(agent, mock_thread_store, m
 
     # Verify the sequence of messages
     messages = result_thread.messages
-    assert len(messages) == 6  # system, 2 pairs of assistant+tool, final assistant
-    assert messages[0].role == "system"
-    assert messages[1].role == "assistant"
-    assert messages[1].content == "Let me help you with that"
-    assert messages[1].tool_calls is not None
-    assert messages[2].role == "tool"
-    assert messages[2].tool_call_id == "call-1"
-    assert messages[2].content == "{'name': 'tool_one', 'content': 'First tool result'}"
-    assert messages[3].role == "assistant"
-    assert messages[3].content == "Let me try another tool"
-    assert messages[3].tool_calls is not None
-    assert messages[4].role == "tool"
-    assert messages[4].tool_call_id == "call-2"
-    assert messages[4].content == "{'name': 'tool_two', 'content': 'Second tool result'}"
-    assert messages[5].role == "assistant"
-    assert messages[5].content == "Here's what I found"
+    assert len(messages) == 5  # 2 pairs of assistant+tool, final assistant
+    assert messages[0].role == "assistant"
+    assert messages[0].content == "Let me help you with that"
+    assert messages[0].tool_calls is not None
+    assert messages[1].role == "tool"
+    assert messages[1].tool_call_id == "call-1"
+    assert messages[1].content == "{'name': 'tool_one', 'content': 'First tool result'}"
+    assert messages[2].role == "assistant"
+    assert messages[2].content == "Let me try another tool"
+    assert messages[2].tool_calls is not None
+    assert messages[3].role == "tool"
+    assert messages[3].tool_call_id == "call-2"
+    assert messages[3].content == "{'name': 'tool_two', 'content': 'Second tool result'}"
+    assert messages[4].role == "assistant"
+    assert messages[4].content == "Here's what I found"
 
 @pytest.mark.asyncio
 async def test_go_with_tool_calls_no_content(agent, mock_thread_store, mock_prompt, mock_litellm):
@@ -812,7 +809,7 @@ async def test_go_with_tool_calls_no_content(agent, mock_thread_store, mock_prom
     thread = Thread(id="test-conv", title="Test Thread")
     mock_prompt.system_prompt.return_value = "Test system prompt"
     thread.messages = []
-    thread.ensure_system_prompt("Test system prompt")
+    # System prompt is now handled by the agent
     mock_thread_store.get.return_value = thread
     agent._iteration_count = 0
 
@@ -905,16 +902,15 @@ async def test_go_with_tool_calls_no_content(agent, mock_thread_store, mock_prom
 
     # Verify the sequence of messages
     messages = result_thread.messages
-    assert len(messages) == 4  # system, assistant with tool call, tool result, final assistant
-    assert messages[0].role == "system"
-    assert messages[1].role == "assistant"
-    assert messages[1].content == ""  # Empty content
-    assert messages[1].tool_calls is not None
-    assert messages[2].role == "tool"
-    assert messages[2].tool_call_id == "test-call-id"
-    assert messages[2].content == "{'name': 'test-tool', 'content': 'Tool result'}"
-    assert messages[3].role == "assistant"
-    assert messages[3].content == "Here's what I found"
+    assert len(messages) == 3  # assistant with tool call, tool result, final assistant
+    assert messages[0].role == "assistant"
+    assert messages[0].content == ""  # Empty content
+    assert messages[0].tool_calls is not None
+    assert messages[1].role == "tool"
+    assert messages[1].tool_call_id == "test-call-id"
+    assert messages[1].content == "{'name': 'test-tool', 'content': 'Tool result'}"
+    assert messages[2].role == "assistant"
+    assert messages[2].content == "Here's what I found"
 
 @pytest.mark.asyncio
 async def test_process_tool_call_with_files(agent, thread):

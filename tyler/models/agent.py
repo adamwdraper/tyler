@@ -121,6 +121,7 @@ class Agent(Model):
     _prompt: AgentPrompt = PrivateAttr(default_factory=AgentPrompt)
     _iteration_count: int = PrivateAttr(default=0)
     _processed_tools: List[Dict] = PrivateAttr(default_factory=list)
+    _cached_system_prompt: str = PrivateAttr(default=None)
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -129,14 +130,22 @@ class Agent(Model):
 
     def __init__(self, **data):
         # Initialize thread_store before super().__init__ if not provided
-        if 'thread_store' not in data:
+        if 'thread_store' not in data or data['thread_store'] is None:
             data['thread_store'] = ThreadStore()
         
         # Initialize file_store if not provided
-        if 'file_store' not in data:
+        if 'file_store' not in data or data['file_store'] is None:
             data['file_store'] = FileStore()
             
         super().__init__(**data)
+        
+        # Generate and cache the system prompt
+        self._cached_system_prompt = self._prompt.system_prompt(
+            purpose=self.purpose,
+            name=self.name,
+            model_name=self.model_name,
+            notes=self.notes
+        )
         
         # Load tools
         self._processed_tools = []
@@ -268,6 +277,21 @@ class Agent(Model):
         return response
     
     @weave.op()
+    async def _prepare_completion_messages(self, thread: Thread) -> List[Dict[str, Any]]:
+        """Prepare messages for completion, including the system prompt."""
+        # Get messages from the thread directly (no filtering needed now)
+        messages = thread.get_messages_for_chat_completion(file_store=self.file_store)
+        
+        # Add our system prompt as the first message
+        system_message = {
+            "role": "system",
+            "content": self._cached_system_prompt  # Use cached system prompt
+        }
+        
+        # Return messages with system prompt first
+        return [system_message] + messages
+
+    @weave.op()
     async def step(self, thread: Thread, stream: bool = False) -> Tuple[Any, Dict]:
         """Execute a single step of the agent's processing.
         
@@ -283,9 +307,12 @@ class Agent(Model):
         Returns:
             Tuple[Any, Dict]: The completion response and metrics.
         """
+        # Prepare messages with system prompt using central method
+        completion_messages = await self._prepare_completion_messages(thread)
+        
         completion_params = {
             "model": self.model_name,
-            "messages": await thread.get_messages_for_chat_completion(file_store=self.file_store),
+            "messages": completion_messages,
             "temperature": self.temperature,
             "stream": stream
         }
@@ -346,6 +373,7 @@ class Agent(Model):
                 }
                     
             return response, metrics
+        
         except Exception as e:
             error_text = f"I encountered an error: {str(e)}"
             error_msg = Message(role='assistant', content=error_text)
@@ -440,6 +468,13 @@ class Agent(Model):
                         "ended_at": datetime.now(UTC).isoformat(),
                         "latency": (datetime.now(UTC) - tool_start_time).total_seconds() * 1000
                     }
+                },
+                source={
+                    "id": tool_name,
+                    "name": tool_name,
+                    "type": "tool",
+                    "agent_id": f"{self.name.lower()}-{id(self)}",
+                    "agent_name": self.name
                 }
             )
             
@@ -479,6 +514,14 @@ class Agent(Model):
                         "ended_at": datetime.now(UTC).isoformat(),
                         "latency": (datetime.now(UTC) - tool_start_time).total_seconds() * 1000
                     }
+                },
+                source={
+                    "id": tool_name,
+                    "name": tool_name,
+                    "type": "tool",
+                    "agent_id": f"{self.name.lower()}-{id(self)}",
+                    "agent_name": self.name,
+                    "error": True
                 }
             )
             # Add error message to thread and new_messages
@@ -491,7 +534,14 @@ class Agent(Model):
         """Handle the case when max iterations is reached."""
         message = Message(
             role="assistant",
-            content="Maximum tool iteration count reached. Stopping further tool calls."
+            content="Maximum tool iteration count reached. Stopping further tool calls.",
+            source={
+                "id": f"{self.name.lower()}-{id(self)}",
+                "name": self.name,
+                "type": "agent",
+                "model": self.model_name,
+                "purpose": self.purpose[:50] if self.purpose else None  # Truncate long purposes
+            }
         )
         thread.add_message(message)
         new_messages.append(message)
@@ -529,10 +579,7 @@ class Agent(Model):
                 thread = await self._get_thread(thread_or_id)
             except ValueError:
                 raise  # Re-raise ValueError for thread not found
-            
-            system_prompt = self._prompt.system_prompt(self.purpose, self.name, self.model_name, self.notes)
-            thread.ensure_system_prompt(system_prompt)
-            
+                        
             # Check if we've already hit max iterations
             if self._iteration_count >= self.max_tool_iterations:
                 return await self._handle_max_iterations(thread, new_messages)
@@ -555,6 +602,12 @@ class Agent(Model):
                                     "ended_at": datetime.now(UTC).isoformat(),
                                     "latency": 0
                                 }
+                            },
+                            source={
+                                "id": f"{self.name.lower()}-{id(self)}",
+                                "name": self.name,
+                                "type": "agent",
+                                "model": self.model_name
                             }
                         )
                         thread.add_message(message)
@@ -576,7 +629,14 @@ class Agent(Model):
                             role="assistant",
                             content=pre_tool,
                             tool_calls=self._serialize_tool_calls(tool_calls) if has_tool_calls else None,
-                            metrics=metrics
+                            metrics=metrics,
+                            source={
+                                "id": f"{self.name.lower()}-{id(self)}",
+                                "name": self.name,
+                                "type": "agent",
+                                "model": self.model_name,
+                                "purpose": self.purpose[:50] if self.purpose else None  # Truncate long purposes
+                            }
                         )
                         thread.add_message(message)
                         new_messages.append(message)
@@ -692,6 +752,12 @@ class Agent(Model):
                                 "ended_at": datetime.now(UTC).isoformat(),
                                 "latency": 0
                             }
+                        },
+                        source={
+                            "id": f"{self.name.lower()}-{id(self)}",
+                            "name": self.name,
+                            "type": "agent",
+                            "model": self.model_name
                         }
                     )
                     thread.add_message(message)
@@ -712,6 +778,12 @@ class Agent(Model):
                             "ended_at": datetime.now(UTC).isoformat(),
                             "latency": 0
                         }
+                    },
+                    source={
+                        "id": f"{self.name.lower()}-{id(self)}",
+                        "name": self.name,
+                        "type": "agent",
+                        "model": self.model_name
                     }
                 )
                 thread.add_message(message)
@@ -738,6 +810,12 @@ class Agent(Model):
                         "ended_at": datetime.now(UTC).isoformat(),
                         "latency": 0
                     }
+                },
+                source={
+                    "id": f"{self.name.lower()}-{id(self)}",
+                    "name": self.name,
+                    "type": "agent",
+                    "model": self.model_name
                 }
             )
             
@@ -767,10 +845,6 @@ class Agent(Model):
             - Any errors that occur
         """
         try:
-            # Initialize thread with system prompt like in go
-            system_prompt = self._prompt.system_prompt(self.purpose, self.name, self.model_name, self.notes)
-            thread.ensure_system_prompt(system_prompt)
-            
             self._iteration_count = 0
             current_content = []  # Accumulate content chunks
             current_tool_calls = []  # Accumulate tool calls
@@ -808,6 +882,12 @@ class Agent(Model):
                                     "ended_at": datetime.now(UTC).isoformat(),
                                     "latency": 0
                                 }
+                            },
+                            source={
+                                "id": f"{self.name.lower()}-{id(self)}",
+                                "name": self.name,
+                                "type": "agent",
+                                "model": self.model_name
                             }
                         )
                         thread.add_message(message)
@@ -915,7 +995,14 @@ class Agent(Model):
                         role="assistant",
                         content=content,
                         tool_calls=current_tool_calls if current_tool_calls else None,
-                        metrics=metrics  # metrics from step() already includes model name
+                        metrics=metrics,
+                        source={
+                            "id": f"{self.name.lower()}-{id(self)}",
+                            "name": self.name,
+                            "type": "agent",
+                            "model": self.model_name,
+                            "purpose": self.purpose[:50] if self.purpose else None  # Truncate long purposes
+                        }
                     )
                     thread.add_message(assistant_message)
                     new_messages.append(assistant_message)
@@ -977,6 +1064,14 @@ class Agent(Model):
                                             "ended_at": datetime.now(UTC).isoformat(),
                                             "latency": 0
                                         }
+                                    },
+                                    source={
+                                        "id": tool_name,
+                                        "name": tool_name,
+                                        "type": "tool",
+                                        "agent_id": f"{self.name.lower()}-{id(self)}",
+                                        "agent_name": self.name,
+                                        "error": True
                                     }
                                 )
                                 thread.add_message(error_message)
@@ -1009,6 +1104,13 @@ class Agent(Model):
                                         "ended_at": datetime.now(UTC).isoformat(),
                                         "latency": 0
                                     }
+                                },
+                                source={
+                                    "id": tool_name,
+                                    "name": tool_name,
+                                    "type": "tool",
+                                    "agent_id": f"{self.name.lower()}-{id(self)}",
+                                    "agent_name": self.name
                                 }
                             )
                             
@@ -1052,6 +1154,12 @@ class Agent(Model):
                                     "ended_at": datetime.now(UTC).isoformat(),
                                     "latency": 0
                                 }
+                            },
+                            source={
+                                "id": f"{self.name.lower()}-{id(self)}",
+                                "name": self.name,
+                                "type": "agent",
+                                "model": self.model_name
                             }
                         )
                         thread.add_message(error_message)
@@ -1087,6 +1195,12 @@ class Agent(Model):
                                 "ended_at": datetime.now(UTC).isoformat(),
                                 "latency": 0
                             }
+                        },
+                        source={
+                            "id": f"{self.name.lower()}-{id(self)}",
+                            "name": self.name,
+                            "type": "agent",
+                            "model": self.model_name
                         }
                     )
                     thread.add_message(error_message)
@@ -1108,6 +1222,12 @@ class Agent(Model):
                             "ended_at": datetime.now(UTC).isoformat(),
                             "latency": 0
                         }
+                    },
+                    source={
+                        "id": f"{self.name.lower()}-{id(self)}",
+                        "name": self.name,
+                        "type": "agent",
+                        "model": self.model_name
                     }
                 )
                 thread.add_message(message)
@@ -1133,6 +1253,12 @@ class Agent(Model):
                         "ended_at": datetime.now(UTC).isoformat(),
                         "latency": 0
                     }
+                },
+                source={
+                    "id": f"{self.name.lower()}-{id(self)}",
+                    "name": self.name,
+                    "type": "agent",
+                    "model": self.model_name
                 }
             )
             thread.add_message(error_message)
