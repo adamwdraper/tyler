@@ -121,6 +121,7 @@ class Agent(Model):
     _prompt: AgentPrompt = PrivateAttr(default_factory=AgentPrompt)
     _iteration_count: int = PrivateAttr(default=0)
     _processed_tools: List[Dict] = PrivateAttr(default_factory=list)
+    _system_prompt: str = PrivateAttr(default="")
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -137,6 +138,10 @@ class Agent(Model):
             data['file_store'] = FileStore()
             
         super().__init__(**data)
+        
+        # Generate system prompt once at initialization
+        self._prompt = AgentPrompt()
+        self._system_prompt = self._prompt.system_prompt(self.purpose, self.name, self.model_name, self.notes)
         
         # Load tools
         self._processed_tools = []
@@ -283,9 +288,15 @@ class Agent(Model):
         Returns:
             Tuple[Any, Dict]: The completion response and metrics.
         """
+        # Get thread messages (these won't include system messages as they're filtered out)
+        thread_messages = await thread.get_messages_for_chat_completion(file_store=self.file_store)
+        
+        # Create completion messages with ephemeral system prompt at the beginning
+        completion_messages = [{"role": "system", "content": self._system_prompt}] + thread_messages
+        
         completion_params = {
             "model": self.model_name,
-            "messages": await thread.get_messages_for_chat_completion(file_store=self.file_store),
+            "messages": completion_messages,
             "temperature": self.temperature,
             "stream": stream
         }
@@ -530,9 +541,6 @@ class Agent(Model):
             except ValueError:
                 raise  # Re-raise ValueError for thread not found
             
-            system_prompt = self._prompt.system_prompt(self.purpose, self.name, self.model_name, self.notes)
-            thread.ensure_system_prompt(system_prompt)
-            
             # Check if we've already hit max iterations
             if self._iteration_count >= self.max_tool_iterations:
                 return await self._handle_max_iterations(thread, new_messages)
@@ -767,10 +775,6 @@ class Agent(Model):
             - Any errors that occur
         """
         try:
-            # Initialize thread with system prompt like in go
-            system_prompt = self._prompt.system_prompt(self.purpose, self.name, self.model_name, self.notes)
-            thread.ensure_system_prompt(system_prompt)
-            
             self._iteration_count = 0
             current_content = []  # Accumulate content chunks
             current_tool_calls = []  # Accumulate tool calls

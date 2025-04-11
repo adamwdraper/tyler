@@ -1,6 +1,7 @@
 """Thread storage implementation."""
 from typing import Optional, Dict, Any, List
 from tyler.models.thread import Thread
+from tyler.models.message import Message
 from tyler.utils.logging import get_logger
 from .storage_backend import MemoryBackend, SQLBackend
 
@@ -17,6 +18,7 @@ class ThreadStore:
     - SQLite for local persistence
     - PostgreSQL for production
     - Built-in connection pooling for SQLBackend
+    - System messages are never saved (ephemeral) - injected by agents at completion time
     
     Usage:
         # RECOMMENDED: Factory pattern for immediate connection validation
@@ -113,9 +115,26 @@ class ThreadStore:
         self._initialized = True
     
     async def save(self, thread: Thread) -> Thread:
-        """Save a thread to storage."""
+        """Save a thread to storage, filtering out system messages."""
         await self._ensure_initialized()
-        return await self._backend.save(thread)
+        
+        # Create a copy of the thread to avoid modifying the original
+        thread_copy = Thread(
+            id=thread.id,
+            title=thread.title,
+            created_at=thread.created_at,
+            updated_at=thread.updated_at,
+            attributes=thread.attributes.copy(),
+            source=thread.source.copy() if thread.source else None
+        )
+        
+        # Add all non-system messages
+        for message in thread.messages:
+            if message.role != "system":
+                thread_copy.messages.append(message)
+        
+        # Save the filtered thread
+        return await self._backend.save(thread_copy)
     
     async def get(self, thread_id: str) -> Optional[Thread]:
         """Get a thread by ID."""

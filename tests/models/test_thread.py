@@ -80,41 +80,21 @@ def test_thread_serialization(sample_thread):
 async def test_get_messages_for_chat_completion(sample_thread):
     """Test getting messages in chat completion format"""
     messages = await sample_thread.get_messages_for_chat_completion()
-    assert len(messages) == 3
+    # System messages are now excluded from get_messages_for_chat_completion
+    assert len(messages) == 2
     assert messages[0] == {
-        "role": "system",
-        "content": "You are a helpful assistant",
-        "sequence": 0
-    }
-    assert messages[1] == {
         "role": "user",
         "content": "Hello",
         "sequence": 1
     }
-    assert messages[2] == {
+    assert messages[1] == {
         "role": "assistant",
         "content": "Hi there!",
         "sequence": 2
     }
 
-def test_ensure_system_prompt():
-    """Test ensuring system prompt exists"""
-    thread = Thread(id="test-thread")
-    thread.add_message(Message(role="user", content="Hello"))
-    
-    # Add system prompt
-    thread.ensure_system_prompt("You are a helpful assistant")
-    assert len(thread.messages) == 2
-    assert thread.messages[0].role == "system"
-    assert thread.messages[0].content == "You are a helpful assistant"
-    assert thread.messages[0].sequence == 0
-    assert thread.messages[1].role == "user"
-    assert thread.messages[1].sequence == 1
-    
-    # Try adding again - should not duplicate
-    thread.ensure_system_prompt("You are a helpful assistant")
-    assert len(thread.messages) == 2
-    assert thread.messages[0].role == "system"
+# The ensure_system_prompt functionality has been removed from Thread and is now
+# handled by the Agent class, which injects the system prompt at completion time.
 
 def test_message_sequencing():
     """Test message sequence numbering"""

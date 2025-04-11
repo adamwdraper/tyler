@@ -442,20 +442,21 @@ async def test_message_sequence_preservation(thread_store):
     # Retrieve thread
     loaded_thread = await thread_store.get(thread.id)
     
-    # Verify sequences
-    assert len(loaded_thread.messages) == 4
-    assert loaded_thread.messages[0].role == "system"
-    assert loaded_thread.messages[0].sequence == 0
+    # Verify system message is not saved (per new architecture)
+    assert len(loaded_thread.messages) == 3
     
-    # Get non-system messages in order
-    non_system = [m for m in loaded_thread.messages if m.role != "system"]
-    assert len(non_system) == 3
-    assert non_system[0].content == "First user message"
-    assert non_system[0].sequence == 1
-    assert non_system[1].content == "First assistant message"
-    assert non_system[1].sequence == 2
-    assert non_system[2].content == "Second user message"
-    assert non_system[2].sequence == 3
+    # Verify the non-system messages are saved with correct sequences
+    messages = sorted(loaded_thread.messages, key=lambda m: m.sequence)
+    assert messages[0].content == "First user message"
+    assert messages[0].sequence == 1
+    assert messages[1].content == "First assistant message"
+    assert messages[1].sequence == 2
+    assert messages[2].content == "Second user message"
+    assert messages[2].sequence == 3
+    
+    # Verify no system messages are present
+    system_messages = [m for m in loaded_thread.messages if m.role == "system"]
+    assert len(system_messages) == 0
 
 @pytest.mark.asyncio
 async def test_save_thread_with_attachments(thread_store):
