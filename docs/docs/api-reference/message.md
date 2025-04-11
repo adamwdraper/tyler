@@ -55,7 +55,19 @@ message = Message(
 message = Message(
     role="user",
     content="Hello!",
-    source={"name": "slack", "thread_id": "123"},
+    source={
+        "entity": {
+            "id": "U123456",
+            "name": "John Doe",
+            "type": "user"
+        },
+        "platform": {
+            "name": "slack",
+            "attributes": {
+                "thread_ts": "1234567890.123456"
+            }
+        }
+    },
     attributes={"customer_id": "456"}
 )
 ```
@@ -73,9 +85,28 @@ message = Message(
 | `tool_calls` | Optional[list] | No | None | Tool calls (for assistant messages) |
 | `attributes` | Dict | No | {} | Custom metadata |
 | `timestamp` | datetime | No | now(UTC) | Message timestamp |
-| `source` | Optional[Dict[str, Any]] | No | None | Source information |
+| `source` | Optional[MessageSource] | No | None | Source information (see MessageSource structure) |
 | `attachments` | List[Attachment] | No | [] | File attachments |
 | `metrics` | Dict[str, Any] | No | Default metrics | Message metrics and analytics |
+
+### Source Structure
+
+```python
+# TypedDict definitions for source structure
+class PlatformSource(TypedDict, total=False):
+    name: str  # Name of the platform (slack, discord, etc.)
+    attributes: Optional[Dict[str, Any]]  # Platform-specific attributes
+
+class EntitySource(TypedDict, total=False):
+    id: str  # Unique identifier for the entity
+    name: str  # Human-readable name of the entity
+    type: Literal["user", "agent", "tool"]  # Type of entity
+    attributes: Optional[Dict[str, Any]]  # All other entity-specific attributes
+
+class MessageSource(TypedDict, total=False):
+    entity: Optional[EntitySource]  # Information about the entity that created the message
+    platform: Optional[PlatformSource]  # Information about the platform where the message was created
+```
 
 ### Content Types
 
@@ -122,8 +153,13 @@ class TextContent(TypedDict):
 Convert message to a dictionary suitable for JSON serialization.
 
 ```python
-def model_dump(self) -> Dict[str, Any]
+def model_dump(self, mode: str = "json") -> Dict[str, Any]
 ```
+
+Parameters:
+- `mode`: Serialization mode, either "json" or "python"
+  - "json": Converts datetimes to ISO strings (default)
+  - "python": Keeps datetimes as datetime objects
 
 Returns a complete dictionary representation including:
 ```python
@@ -135,7 +171,7 @@ Returns a complete dictionary representation including:
     "name": Optional[str],
     "tool_call_id": Optional[str],
     "tool_calls": Optional[List],
-    "timestamp": str,        # ISO format with timezone
+    "timestamp": str,        # ISO format with timezone (if mode="json")
     "source": Optional[Dict],
     "metrics": Dict,
     "attributes": Dict,
@@ -163,8 +199,11 @@ The `attributes` field contains file-specific information such as extracted text
 Return message in the format expected by chat completion APIs.
 
 ```python
-def to_chat_completion_message(self) -> Dict[str, Any]
+def to_chat_completion_message(self, file_store: Optional[FileStore] = None) -> Dict[str, Any]
 ```
+
+Parameters:
+- `file_store`: Optional FileStore instance for accessing file URLs
 
 Returns:
 ```python
@@ -179,8 +218,8 @@ Returns:
 ```
 
 For messages with attachments:
-- User messages: Adds file references to content
-- Assistant messages: Adds file metadata to content
+- User and tool messages: Adds file references to content
+- Assistant messages: Adds "Generated Files:" section with file references
 
 ### add_attachment
 
@@ -338,6 +377,17 @@ def validate_tool_calls(cls, v: list) -> list
 
 Ensures tool calls have proper structure with id, type, and function fields
 
+### validate_source
+
+Validate source field structure.
+
+```python
+@field_validator("source")
+def validate_source(cls, v) -> Optional[Dict]
+```
+
+Ensures the source field has the correct structure with valid entity type if present.
+
 ## Best Practices
 
 1. **Message Sequencing**
@@ -378,13 +428,6 @@ Ensures tool calls have proper structure with id, type, and function fields
    # Let ThreadStore handle attachment storage
    thread.add_message(message)
    await thread_store.save(thread)  # Will process and store attachments
-   
-   # During storage:
-   # 1. Each attachment's content is processed based on file type
-   # 2. The file is stored in the configured storage backend
-   # 3. The attachment's attributes are populated with extracted information
-   # 4. The attachment's status is updated to "stored"
-   # 5. The attachment's storage_path and file_id are set
    ```
 
 3. **Tool Messages**
@@ -416,41 +459,37 @@ Ensures tool calls have proper structure with id, type, and function fields
    })
    ```
 
-5. **Attachment Processing**
+5. **Source Attribution**
    ```python
-   # Attachments are automatically processed when the thread is saved
-   thread.add_message(message_with_attachment)
-   await thread_store.save(thread)
-   
-   # Access attachment attributes after storage
-   for attachment in message.attachments:
-       if attachment.status == "stored" and attachment.attributes:
-           url = attachment.attributes.get("url")
-           text = attachment.attributes.get("text")
-           file_type = attachment.attributes.get("type")
-           
-           # Different file types have different attributes
-           if file_type == "image":
-               overview = attachment.attributes.get("overview")
-               analysis = attachment.attributes.get("analysis")
-           elif file_type == "document":
-               extracted_text = attachment.attributes.get("text")
-           elif file_type == "json":
-               parsed_content = attachment.attributes.get("parsed_content")
+   # Using detailed source attribution
+   message = Message(
+       role="user",
+       content="Hello",
+       source={
+           "entity": {
+               "id": "U123456",
+               "name": "John Doe",
+               "type": "user",
+               "attributes": {
+                   "email": "john@example.com"
+               }
+           },
+           "platform": {
+               "name": "slack",
+               "attributes": {
+                   "channel_id": "C123456",
+                   "thread_ts": "1234567890.123456"
+               }
+           }
+       }
+   )
    ```
 
 6. **Attachment URL Handling**
    ```python
    # The Message model automatically handles attachment URLs in chat completions
    # When converting a message to chat completion format:
-   chat_message = message.to_chat_completion_message()
-   
-   # For messages with attachments, file references are added to the content:
-   # - User messages: [File: /files/path/to/file.pdf (application/pdf)]
-   # - Assistant messages: Generated Files: [File: /files/path/to/file.pdf (application/pdf)]
-   
-   # The URL is retrieved from attachment.attributes["url"] if available
-   # or constructed from the storage_path if not
+   chat_message = message.to_chat_completion_message(file_store)
    ```
 
 ## See Also

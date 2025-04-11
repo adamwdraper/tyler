@@ -61,20 +61,6 @@ message = Message(role="user", content="Hello!")
 thread.add_message(message)
 ```
 
-### ensure_system_prompt
-
-Ensures a system prompt exists as the first message in the thread.
-
-```python
-def ensure_system_prompt(
-    self,
-    prompt: str
-) -> None
-```
-
-Only adds a system message if none exists at the start of the thread.
-Does not modify any existing system messages.
-
 ### get_messages_for_chat_completion
 
 Return messages in the format expected by chat completion APIs.
@@ -83,7 +69,10 @@ Return messages in the format expected by chat completion APIs.
 async def get_messages_for_chat_completion(self, file_store: Optional[FileStore] = None) -> List[Dict[str, Any]]
 ```
 
-Returns messages formatted for LLM completion, including proper sequencing and any file references. If messages have attachments, file_store is required to access their content.
+Returns messages formatted for LLM completion, including proper sequencing and any file references. System messages are excluded as they are typically injected by agents at completion time.
+
+Parameters:
+- `file_store`: Optional FileStore instance to pass to messages for file URL access
 
 ### clear_messages
 
@@ -242,13 +231,18 @@ def get_messages_in_sequence(self) -> List[Message]
 
 Returns a list of messages sorted by their sequence number.
 
-### to_dict
+### model_dump
 
 Convert thread to a dictionary suitable for JSON serialization.
 
 ```python
-def to_dict(self) -> Dict[str, Any]
+def model_dump(self, mode: str = "json") -> Dict[str, Any]
 ```
+
+Parameters:
+- `mode`: Serialization mode, either "json" or "python"
+  - "json": Converts datetimes to ISO strings (default)
+  - "python": Keeps datetimes as datetime objects
 
 Returns:
 ```python
@@ -256,8 +250,8 @@ Returns:
     "id": str,
     "title": str,
     "messages": List[Dict],  # Serialized messages
-    "created_at": str,       # ISO format with timezone
-    "updated_at": str,       # ISO format with timezone
+    "created_at": str,       # ISO format with timezone if mode="json"
+    "updated_at": str,       # ISO format with timezone if mode="json"
     "attributes": Dict,
     "source": Optional[Dict]
 }
@@ -285,13 +279,7 @@ Converts naive datetime objects to UTC timezone-aware ones.
    thread.add_message(Message(role="user", content="..."))    # Gets sequence 1
    ```
 
-2. **System Prompts**
-   ```python
-   # Add system prompt safely
-   thread.ensure_system_prompt("You are a helpful assistant...")
-   ```
-
-3. **Analytics**
+2. **Analytics**
    ```python
    # Monitor token usage
    usage = thread.get_total_tokens()
@@ -310,7 +298,7 @@ Converts naive datetime objects to UTC timezone-aware ones.
    print(f"Total tool calls: {tool_usage['total_calls']}")
    ```
 
-4. **Message Organization**
+3. **Message Organization**
    ```python
    # Get messages in sequence order
    ordered_messages = thread.get_messages_in_sequence()
@@ -322,7 +310,7 @@ Converts naive datetime objects to UTC timezone-aware ones.
    system_msg = thread.get_system_message()
    ```
 
-5. **Source Tracking**
+4. **Source Tracking**
    ```python
    thread = Thread(
        source={
@@ -331,6 +319,16 @@ Converts naive datetime objects to UTC timezone-aware ones.
            "thread_ts": "1234567890.123"
        }
    )
+   ```
+
+5. **Chat Completion Preparation**
+   ```python
+   # Get messages ready for LLM API
+   messages = await thread.get_messages_for_chat_completion()
+   
+   # If messages have attachments, provide a file_store
+   file_store = FileStore()
+   messages = await thread.get_messages_for_chat_completion(file_store=file_store)
    ```
 
 ## See Also
