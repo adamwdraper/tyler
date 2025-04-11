@@ -112,6 +112,7 @@ class Agent(Model):
     name: str = Field(default="Tyler")
     purpose: str = Field(default="To be a helpful assistant.")
     notes: str = Field(default="")
+    version: str = Field(default="1.0.0")
     tools: List[Union[str, Dict]] = Field(default_factory=list, description="List of tools available to the agent. Can include built-in tool module names (as strings) and custom tools (as dicts with required 'definition' and 'implementation' keys, and an optional 'attributes' key for tool metadata). For built-in tools, you can specify specific tools to include using the format 'module:tool1,tool2'.")
     max_tool_iterations: int = Field(default=10)
     thread_store: Optional[ThreadStore] = Field(default=None, description="Thread storage implementation. Uses ThreadStore with memory backend by default.")
@@ -359,7 +360,21 @@ class Agent(Model):
             return response, metrics
         except Exception as e:
             error_text = f"I encountered an error: {str(e)}"
-            error_msg = Message(role='assistant', content=error_text)
+            error_msg = Message(
+                role='assistant', 
+                content=error_text,
+                source={
+                    "entity": {
+                        "id": self.name,
+                        "name": self.name,
+                        "type": "agent",
+                        "attributes": {
+                            "model": self.model_name,
+                            "purpose": self.purpose
+                        }
+                    }
+                }
+            )
             error_msg.metrics = {"error": str(e)}
             thread.add_message(error_msg)
             return thread, [error_msg]
@@ -445,6 +460,16 @@ class Agent(Model):
                 name=tool_name,
                 content=content,
                 tool_call_id=tool_call.get('id') if isinstance(tool_call, dict) else tool_call.id,
+                source={
+                    "entity": {
+                        "id": tool_name,
+                        "name": tool_name,
+                        "type": "tool",
+                        "attributes": {
+                            "agent_id": self.name
+                        }
+                    }
+                },
                 metrics={
                     "timing": {
                         "started_at": tool_start_time.isoformat(),
@@ -484,6 +509,16 @@ class Agent(Model):
                 name=tool_name,
                 content=error_msg,
                 tool_call_id=tool_call.get('id') if isinstance(tool_call, dict) else tool_call.id,
+                source={
+                    "entity": {
+                        "id": tool_name,
+                        "name": tool_name,
+                        "type": "tool",
+                        "attributes": {
+                            "agent_id": self.name
+                        }
+                    }
+                },
                 metrics={
                     "timing": {
                         "started_at": tool_start_time.isoformat(),
@@ -502,7 +537,18 @@ class Agent(Model):
         """Handle the case when max iterations is reached."""
         message = Message(
             role="assistant",
-            content="Maximum tool iteration count reached. Stopping further tool calls."
+            content="Maximum tool iteration count reached. Stopping further tool calls.",
+            source={
+                "entity": {
+                    "id": self.name,
+                    "name": self.name,
+                    "type": "agent",
+                    "attributes": {
+                        "model": self.model_name,
+                        "purpose": self.purpose
+                    }
+                }
+            }
         )
         thread.add_message(message)
         new_messages.append(message)
@@ -557,6 +603,17 @@ class Agent(Model):
                         message = Message(
                             role="assistant",
                             content=f"I encountered an error: {error_msg}. Please try again.",
+                            source={
+                                "entity": {
+                                    "id": self.name,
+                                    "name": self.name,
+                                    "type": "agent",
+                                    "attributes": {
+                                        "model": self.model_name,
+                                        "purpose": self.purpose
+                                    }
+                                }
+                            },
                             metrics={
                                 "timing": {
                                     "started_at": datetime.now(UTC).isoformat(),
@@ -584,6 +641,18 @@ class Agent(Model):
                             role="assistant",
                             content=pre_tool,
                             tool_calls=self._serialize_tool_calls(tool_calls) if has_tool_calls else None,
+                            source={
+                                "entity": {
+                                    "id": self.name,
+                                    "name": self.name,
+                                    "type": "agent",
+                                    "attributes": {
+                                        "model": self.model_name,
+                                        "purpose": self.purpose,
+                                        "version": self.version
+                                    }
+                                }
+                            },
                             metrics=metrics
                         )
                         thread.add_message(message)
@@ -614,6 +683,16 @@ class Agent(Model):
                                     name=tool_name,
                                     content=error_msg,
                                     tool_call_id=tool_call.id if hasattr(tool_call, 'id') else tool_call.get('id'),
+                                    source={
+                                        "entity": {
+                                            "id": tool_name,
+                                            "name": tool_name,
+                                            "type": "tool",
+                                            "attributes": {
+                                                "agent_id": self.name
+                                            }
+                                        }
+                                    },
                                     metrics={
                                         "timing": {
                                             "started_at": datetime.now(UTC).isoformat(),
@@ -645,6 +724,16 @@ class Agent(Model):
                                 name=tool_name,
                                 content=content,
                                 tool_call_id=tool_call.id if hasattr(tool_call, 'id') else tool_call.get('id'),
+                                source={
+                                    "entity": {
+                                        "id": tool_name,
+                                        "name": tool_name,
+                                        "type": "tool",
+                                        "attributes": {
+                                            "agent_id": self.name
+                                        }
+                                    }
+                                },
                                 metrics={
                                     "timing": {
                                         "started_at": datetime.now(UTC).isoformat(),
@@ -694,6 +783,17 @@ class Agent(Model):
                     message = Message(
                         role="assistant",
                         content=f"I encountered an error: {error_msg}. Please try again.",
+                        source={
+                            "entity": {
+                                "id": self.name,
+                                "name": self.name,
+                                "type": "agent",
+                                "attributes": {
+                                    "model": self.model_name,
+                                    "purpose": self.purpose
+                                }
+                            }
+                        },
                         metrics={
                             "timing": {
                                 "started_at": datetime.now(UTC).isoformat(),
@@ -714,11 +814,15 @@ class Agent(Model):
                 message = Message(
                     role="assistant",
                     content="Maximum tool iteration count reached. Stopping further tool calls.",
-                    metrics={
-                        "timing": {
-                            "started_at": datetime.now(UTC).isoformat(),
-                            "ended_at": datetime.now(UTC).isoformat(),
-                            "latency": 0
+                    source={
+                        "entity": {
+                            "id": self.name,
+                            "name": self.name,
+                            "type": "agent",
+                            "attributes": {
+                                "model": self.model_name,
+                                "purpose": self.purpose
+                            }
                         }
                     }
                 )
@@ -740,6 +844,17 @@ class Agent(Model):
             message = Message(
                 role="assistant",
                 content=f"I encountered an error: {error_msg}. Please try again.",
+                source={
+                    "entity": {
+                        "id": self.name,
+                        "name": self.name,
+                        "type": "agent",
+                        "attributes": {
+                            "model": self.model_name,
+                            "purpose": self.purpose
+                        }
+                    }
+                },
                 metrics={
                     "timing": {
                         "started_at": datetime.now(UTC).isoformat(),
@@ -787,7 +902,18 @@ class Agent(Model):
             if self._iteration_count >= self.max_tool_iterations:
                 message = Message(
                     role="assistant",
-                    content="Maximum tool iteration count reached. Stopping further tool calls."
+                    content="Maximum tool iteration count reached. Stopping further tool calls.",
+                    source={
+                        "entity": {
+                            "id": self.name,
+                            "name": self.name,
+                            "type": "agent",
+                            "attributes": {
+                                "model": self.model_name,
+                                "purpose": self.purpose
+                            }
+                        }
+                    }
                 )
                 thread.add_message(message)
                 yield StreamUpdate(StreamUpdate.Type.ASSISTANT_MESSAGE, message)
@@ -806,6 +932,17 @@ class Agent(Model):
                         message = Message(
                             role="assistant",
                             content=f"I encountered an error: {error_msg}. Please try again.",
+                            source={
+                                "entity": {
+                                    "id": self.name,
+                                    "name": self.name,
+                                    "type": "agent",
+                                    "attributes": {
+                                        "model": self.model_name,
+                                        "purpose": self.purpose
+                                    }
+                                }
+                            },
                             metrics={
                                 "timing": {
                                     "started_at": datetime.now(UTC).isoformat(),
@@ -919,6 +1056,18 @@ class Agent(Model):
                         role="assistant",
                         content=content,
                         tool_calls=current_tool_calls if current_tool_calls else None,
+                        source={
+                            "entity": {
+                                "id": self.name,
+                                "name": self.name,
+                                "type": "agent",
+                                "attributes": {
+                                    "model": self.model_name,
+                                    "purpose": self.purpose,
+                                    "version": self.version
+                                }
+                            }
+                        },
                         metrics=metrics  # metrics from step() already includes model name
                     )
                     thread.add_message(assistant_message)
@@ -975,6 +1124,16 @@ class Agent(Model):
                                     name=tool_name,
                                     content=error_msg,
                                     tool_call_id=tool_call['id'],
+                                    source={
+                                        "entity": {
+                                            "id": tool_name,
+                                            "name": tool_name,
+                                            "type": "tool",
+                                            "attributes": {
+                                                "agent_id": self.name
+                                            }
+                                        }
+                                    },
                                     metrics={
                                         "timing": {
                                             "started_at": datetime.now(UTC).isoformat(),
@@ -1007,6 +1166,16 @@ class Agent(Model):
                                 name=tool_name,
                                 content=content,
                                 tool_call_id=tool_call['id'],
+                                source={
+                                    "entity": {
+                                        "id": tool_name,
+                                        "name": tool_name,
+                                        "type": "tool",
+                                        "attributes": {
+                                            "agent_id": self.name
+                                        }
+                                    }
+                                },
                                 metrics={
                                     "timing": {
                                         "started_at": datetime.now(UTC).isoformat(),
@@ -1050,6 +1219,17 @@ class Agent(Model):
                         error_message = Message(
                             role="assistant",
                             content=f"I encountered an error: {error_msg}. Please try again.",
+                            source={
+                                "entity": {
+                                    "id": self.name,
+                                    "name": self.name,
+                                    "type": "agent",
+                                    "attributes": {
+                                        "model": self.model_name,
+                                        "purpose": self.purpose
+                                    }
+                                }
+                            },
                             metrics={
                                 "timing": {
                                     "started_at": datetime.now(UTC).isoformat(),
@@ -1085,6 +1265,17 @@ class Agent(Model):
                     error_message = Message(
                         role="assistant",
                         content=f"I encountered an error: {error_msg}. Please try again.",
+                        source={
+                            "entity": {
+                                "id": self.name,
+                                "name": self.name,
+                                "type": "agent",
+                                "attributes": {
+                                    "model": self.model_name,
+                                    "purpose": self.purpose
+                                }
+                            }
+                        },
                         metrics={
                             "timing": {
                                 "started_at": datetime.now(UTC).isoformat(),
@@ -1106,11 +1297,15 @@ class Agent(Model):
                 message = Message(
                     role="assistant",
                     content="Maximum tool iteration count reached. Stopping further tool calls.",
-                    metrics={
-                        "timing": {
-                            "started_at": datetime.now(UTC).isoformat(),
-                            "ended_at": datetime.now(UTC).isoformat(),
-                            "latency": 0
+                    source={
+                        "entity": {
+                            "id": self.name,
+                            "name": self.name,
+                            "type": "agent",
+                            "attributes": {
+                                "model": self.model_name,
+                                "purpose": self.purpose
+                            }
                         }
                     }
                 )
@@ -1131,6 +1326,17 @@ class Agent(Model):
             error_message = Message(
                 role="assistant",
                 content=f"I encountered an error: {error_msg}. Please try again.",
+                source={
+                    "entity": {
+                        "id": self.name,
+                        "name": self.name,
+                        "type": "agent",
+                        "attributes": {
+                            "model": self.model_name,
+                            "purpose": self.purpose
+                        }
+                    }
+                },
                 metrics={
                     "timing": {
                         "started_at": datetime.now(UTC).isoformat(),

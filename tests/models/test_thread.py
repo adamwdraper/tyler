@@ -14,7 +14,22 @@ def sample_thread():
         id="test-thread",
         title="Test Thread",
         attributes={"category": "test"},
-        source={"name": "slack", "channel": "general"}
+        source={
+            "entity": {
+                "id": "U123456",
+                "name": "Test User",
+                "type": "user",
+                "attributes": {
+                    "user_id": "U123456"
+                }
+            },
+            "platform": {
+                "name": "slack",
+                "attributes": {
+                    "channel": "general"
+                }
+            }
+        }
     )
     thread.add_message(Message(role="system", content="You are a helpful assistant"))
     thread.add_message(Message(role="user", content="Hello"))
@@ -51,7 +66,9 @@ def test_thread_serialization(sample_thread):
     assert data["id"] == "test-thread"
     assert data["title"] == "Test Thread"
     assert data["attributes"] == {"category": "test"}
-    assert data["source"] == {"name": "slack", "channel": "general"}
+    assert data["source"]["entity"]["id"] == "U123456"
+    assert data["source"]["platform"]["name"] == "slack"
+    assert data["source"]["platform"]["attributes"]["channel"] == "general"
     assert len(data["messages"]) == 3
     assert data["messages"][0]["role"] == "system"
     assert data["messages"][1]["role"] == "user"
