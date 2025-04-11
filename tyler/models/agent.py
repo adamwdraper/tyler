@@ -129,11 +129,11 @@ class Agent(Model):
 
     def __init__(self, **data):
         # Initialize thread_store before super().__init__ if not provided
-        if 'thread_store' not in data:
+        if 'thread_store' not in data or data['thread_store'] is None:
             data['thread_store'] = ThreadStore()
         
         # Initialize file_store if not provided
-        if 'file_store' not in data:
+        if 'file_store' not in data or data['file_store'] is None:
             data['file_store'] = FileStore()
             
         super().__init__(**data)
