@@ -1,7 +1,6 @@
 """Thread storage implementation."""
 from typing import Optional, Dict, Any, List
 from tyler.models.thread import Thread
-from tyler.models.message import Message
 from tyler.utils.logging import get_logger
 from .storage_backend import MemoryBackend, SQLBackend
 
@@ -18,7 +17,6 @@ class ThreadStore:
     - SQLite for local persistence
     - PostgreSQL for production
     - Built-in connection pooling for SQLBackend
-    - System messages are never saved (ephemeral) - injected by agents at completion time
     
     Usage:
         # RECOMMENDED: Factory pattern for immediate connection validation
@@ -115,26 +113,41 @@ class ThreadStore:
         self._initialized = True
     
     async def save(self, thread: Thread) -> Thread:
-        """Save a thread to storage, filtering out system messages."""
+        """
+        Save a thread to storage, filtering out system messages.
+        
+        System messages are not persisted to storage by design, but are kept
+        in the original Thread object in memory.
+        
+        Args:
+            thread: The Thread object to save
+            
+        Returns:
+            The original Thread object (with system messages intact)
+        """
         await self._ensure_initialized()
         
-        # Create a copy of the thread to avoid modifying the original
-        thread_copy = Thread(
+        # Create a filtered copy of the thread without system messages
+        filtered_thread = Thread(
             id=thread.id,
             title=thread.title,
             created_at=thread.created_at,
             updated_at=thread.updated_at,
-            attributes=thread.attributes.copy(),
+            attributes=thread.attributes.copy() if thread.attributes else {},
             source=thread.source.copy() if thread.source else None
         )
         
-        # Add all non-system messages
+        # Only copy non-system messages to the filtered thread
         for message in thread.messages:
             if message.role != "system":
-                thread_copy.messages.append(message)
+                # We create a shallow copy of the message to preserve the original
+                filtered_thread.messages.append(message)
         
-        # Save the filtered thread
-        return await self._backend.save(thread_copy)
+        # Save the filtered thread to storage
+        await self._backend.save(filtered_thread)
+        
+        # Return the original thread (with system messages intact)
+        return thread
     
     async def get(self, thread_id: str) -> Optional[Thread]:
         """Get a thread by ID."""
