@@ -428,7 +428,7 @@ async def test_thread_store_pagination():
 
 @pytest.mark.asyncio
 async def test_message_sequence_preservation(thread_store):
-    """Test that message sequences are preserved correctly in database"""
+    """Test that message sequences are preserved correctly in database while system messages are filtered"""
     # Create a thread with system and non-system messages
     thread = Thread(id="test-thread")
     thread.add_message(Message(role="user", content="First user message"))
@@ -436,26 +436,30 @@ async def test_message_sequence_preservation(thread_store):
     thread.add_message(Message(role="system", content="System message"))
     thread.add_message(Message(role="user", content="Second user message"))
     
-    # Save thread
-    await thread_store.save(thread)
+    # Keep track of original message count
+    original_message_count = len(thread.messages)
     
-    # Retrieve thread
+    # Save thread
+    saved_thread = await thread_store.save(thread)
+    
+    # Original thread should still have system message intact
+    assert len(saved_thread.messages) == original_message_count
+    assert any(m.role == "system" for m in saved_thread.messages)
+    
+    # Retrieve thread from database
     loaded_thread = await thread_store.get(thread.id)
     
-    # Verify sequences
-    assert len(loaded_thread.messages) == 4
-    assert loaded_thread.messages[0].role == "system"
-    assert loaded_thread.messages[0].sequence == 0
+    # Verify system messages are not present in the loaded thread
+    assert len(loaded_thread.messages) == 3, "Expected only non-system messages to be persisted"
+    assert all(m.role != "system" for m in loaded_thread.messages), "System messages should not be persisted"
     
-    # Get non-system messages in order
-    non_system = [m for m in loaded_thread.messages if m.role != "system"]
-    assert len(non_system) == 3
-    assert non_system[0].content == "First user message"
-    assert non_system[0].sequence == 1
-    assert non_system[1].content == "First assistant message"
-    assert non_system[1].sequence == 2
-    assert non_system[2].content == "Second user message"
-    assert non_system[2].sequence == 3
+    # Verify the non-system messages are in the correct order with proper sequences
+    assert loaded_thread.messages[0].content == "First user message"
+    assert loaded_thread.messages[0].sequence == 1
+    assert loaded_thread.messages[1].content == "First assistant message"
+    assert loaded_thread.messages[1].sequence == 2
+    assert loaded_thread.messages[2].content == "Second user message"
+    assert loaded_thread.messages[2].sequence == 3
 
 @pytest.mark.asyncio
 async def test_save_thread_with_attachments(thread_store):
