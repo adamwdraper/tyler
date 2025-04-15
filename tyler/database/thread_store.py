@@ -178,6 +178,49 @@ class ThreadStore:
         """List recent threads."""
         await self._ensure_initialized()
         return await self._backend.list_recent(limit)
+        
+    async def find_messages_by_attribute(self, path: str, value: Any) -> bool:
+        """
+        Check if any messages exist with a specific attribute at a given JSON path.
+        This is useful for checking if a message with specific metadata (like a Slack ts)
+        has already been processed.
+        
+        Args:
+            path: Dot-notation path to the attribute (e.g., "source.platform.attributes.ts")
+            value: The value to search for
+            
+        Returns:
+            True if any messages match, False otherwise
+        """
+        await self._ensure_initialized()
+        if hasattr(self._backend, 'find_messages_by_attribute'):
+            return await self._backend.find_messages_by_attribute(path, value)
+        else:
+            # Fallback implementation for backends that don't support this method
+            # This is less efficient but provides compatibility
+            threads = await self._backend.list_recent(100)  # Get recent threads
+            
+            # Check each thread's messages
+            for thread in threads:
+                for message in thread.messages:
+                    # Navigate the path to get the value
+                    current = message
+                    parts = path.split('.')
+                    
+                    for part in parts:
+                        if isinstance(current, dict) and part in current:
+                            current = current[part]
+                        elif hasattr(current, part):
+                            current = getattr(current, part)
+                        else:
+                            current = None
+                            break
+                    
+                    # Check if we found a match
+                    if current == value:
+                        return True
+            
+            return False
 
     # Add properties to expose backend attributes
     @property
