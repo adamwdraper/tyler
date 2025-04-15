@@ -113,9 +113,41 @@ class ThreadStore:
         self._initialized = True
     
     async def save(self, thread: Thread) -> Thread:
-        """Save a thread to storage."""
+        """
+        Save a thread to storage, filtering out system messages.
+        
+        System messages are not persisted to storage by design, but are kept
+        in the original Thread object in memory.
+        
+        Args:
+            thread: The Thread object to save
+            
+        Returns:
+            The original Thread object (with system messages intact)
+        """
         await self._ensure_initialized()
-        return await self._backend.save(thread)
+        
+        # Create a filtered copy of the thread without system messages
+        filtered_thread = Thread(
+            id=thread.id,
+            title=thread.title,
+            created_at=thread.created_at,
+            updated_at=thread.updated_at,
+            attributes=thread.attributes.copy() if thread.attributes else {},
+            source=thread.source.copy() if thread.source else None
+        )
+        
+        # Only copy non-system messages to the filtered thread
+        for message in thread.messages:
+            if message.role != "system":
+                # We create a shallow copy of the message to preserve the original
+                filtered_thread.messages.append(message)
+        
+        # Save the filtered thread to storage
+        await self._backend.save(filtered_thread)
+        
+        # Return the original thread (with system messages intact)
+        return thread
     
     async def get(self, thread_id: str) -> Optional[Thread]:
         """Get a thread by ID."""
@@ -146,6 +178,49 @@ class ThreadStore:
         """List recent threads."""
         await self._ensure_initialized()
         return await self._backend.list_recent(limit)
+        
+    async def find_messages_by_attribute(self, path: str, value: Any) -> bool:
+        """
+        Check if any messages exist with a specific attribute at a given JSON path.
+        This is useful for checking if a message with specific metadata (like a Slack ts)
+        has already been processed.
+        
+        Args:
+            path: Dot-notation path to the attribute (e.g., "source.platform.attributes.ts")
+            value: The value to search for
+            
+        Returns:
+            True if any messages match, False otherwise
+        """
+        await self._ensure_initialized()
+        if hasattr(self._backend, 'find_messages_by_attribute'):
+            return await self._backend.find_messages_by_attribute(path, value)
+        else:
+            # Fallback implementation for backends that don't support this method
+            # This is less efficient but provides compatibility
+            threads = await self._backend.list_recent(100)  # Get recent threads
+            
+            # Check each thread's messages
+            for thread in threads:
+                for message in thread.messages:
+                    # Navigate the path to get the value
+                    current = message
+                    parts = path.split('.')
+                    
+                    for part in parts:
+                        if isinstance(current, dict) and part in current:
+                            current = current[part]
+                        elif hasattr(current, part):
+                            current = getattr(current, part)
+                        else:
+                            current = None
+                            break
+                    
+                    # Check if we found a match
+                    if current == value:
+                        return True
+            
+            return False
 
     # Add properties to expose backend attributes
     @property

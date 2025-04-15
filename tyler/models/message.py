@@ -22,6 +22,20 @@ class TextContent(TypedDict):
     type: Literal["text"]
     text: str
 
+class PlatformSource(TypedDict, total=False):
+    name: str  # Name of the platform (slack, discord, etc.)
+    attributes: Optional[Dict[str, Any]]  # Platform-specific attributes
+
+class EntitySource(TypedDict, total=False):
+    id: str  # Unique identifier for the entity
+    name: str  # Human-readable name of the entity
+    type: Literal["user", "agent", "tool"]  # Type of entity
+    attributes: Optional[Dict[str, Any]]  # All other entity-specific attributes
+
+class MessageSource(TypedDict, total=False):
+    entity: Optional[EntitySource]  # Information about the entity that created the message
+    platform: Optional[PlatformSource]  # Information about the platform where the message was created
+
 class Message(BaseModel):
     """Represents a single message in a thread"""
     id: str = None  # Will be set in __init__
@@ -36,7 +50,7 @@ class Message(BaseModel):
     tool_calls: Optional[list] = None  # For assistant messages
     attributes: Dict = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    source: Optional[Dict[str, Any]] = None  # {"name": "slack", "thread_id": "..."}
+    source: Optional[MessageSource] = None  # Enhanced attribution for message sources
     attachments: List[Attachment] = Field(default_factory=list)
     
     # Simple metrics structure
@@ -94,6 +108,21 @@ class Message(BaseModel):
                     raise ValueError("Tool call function must be a dictionary")
                 if "name" not in tool_call["function"] or "arguments" not in tool_call["function"]:
                     raise ValueError("Tool call function must have name and arguments fields")
+        return v
+
+    @field_validator("source")
+    def validate_source(cls, v):
+        """Validate source field structure"""
+        if v is not None:
+            # Validate entity if present
+            if "entity" in v and v["entity"] is not None:
+                if "type" in v["entity"] and v["entity"]["type"] not in ["user", "agent", "tool"]:
+                    raise ValueError("entity.type must be one of: user, agent, tool")
+                
+            # Validate platform if present
+            if "platform" in v and v["platform"] is not None:
+                if "name" not in v["platform"]:
+                    raise ValueError("platform.name is required when platform is present")
         return v
 
     def __init__(self, **data):
@@ -329,8 +358,23 @@ class Message(BaseModel):
                     "attributes": {},
                     "timestamp": "2024-02-07T00:00:00+00:00",
                     "source": {
-                        "name": "slack",
-                        "thread_id": "1234567890.123456"
+                        "entity": {
+                            "id": "U123456",
+                            "name": "John Doe",
+                            "type": "user",
+                            "attributes": {
+                                "email": "john.doe@example.com",
+                                "user_id": "U123456"
+                            }
+                        },
+                        "platform": {
+                            "name": "slack",
+                            "attributes": {
+                                "thread_ts": "1234567890.123456",
+                                "channel_id": "C123456",
+                                "team_id": "T123456"
+                            }
+                        }
                     },
                     "attachments": [
                         {

@@ -62,15 +62,6 @@ class Thread(BaseModel):
             "source": self.source
         }
     
-    def ensure_system_prompt(self, prompt: str) -> None:
-        """Ensures a system prompt exists as the first message in the thread.
-        
-        If no system message exists at the start of the thread, adds one.
-        Does not modify any existing system messages.
-        """
-        if not self.messages or self.messages[0].role != "system":
-            self.add_message(Message(role="system", content=prompt))
-
     def add_message(self, message: Message) -> None:
         """Add a new message to the thread and update analytics"""
         # Set message sequence - system messages always get 0, others get next available number starting at 1
@@ -89,10 +80,13 @@ class Thread(BaseModel):
     async def get_messages_for_chat_completion(self, file_store: Optional[FileStore] = None) -> List[Dict[str, Any]]:
         """Return messages in the format expected by chat completion APIs
         
+        Note: This excludes system messages as they are injected by agents at completion time.
+        
         Args:
             file_store: Optional FileStore instance to pass to messages for file URL access
         """
-        return [msg.to_chat_completion_message(file_store=file_store) for msg in self.messages]
+        # Only include non-system messages from the thread - system messages are injected by agents
+        return [msg.to_chat_completion_message(file_store=file_store) for msg in self.messages if msg.role != "system"]
 
     def clear_messages(self) -> None:
         """Clear all messages from the thread"""

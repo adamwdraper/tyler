@@ -62,6 +62,11 @@ class StorageBackend(ABC):
         """List recent threads."""
         pass
 
+    @abstractmethod
+    async def find_messages_by_attribute(self, path: str, value: Any) -> bool:
+        """Check if any messages exist with a specific attribute at a JSON path."""
+        pass
+
 class MemoryBackend(StorageBackend):
     """In-memory storage backend using a dictionary."""
     
@@ -120,6 +125,38 @@ class MemoryBackend(StorageBackend):
         if limit is not None:
             threads = threads[:limit]
         return threads
+
+    async def find_messages_by_attribute(self, path: str, value: Any) -> bool:
+        """
+        Check if any messages exist with a specific attribute at a given JSON path.
+        
+        Args:
+            path: Dot-notation path to the attribute (e.g., "source.platform.attributes.ts")
+            value: The value to search for
+            
+        Returns:
+            True if any messages match, False otherwise
+        """
+        # Traverse all threads and messages
+        for thread in self._threads.values():
+            for message in thread.messages:
+                # Use the path to navigate to the target attribute
+                current = message.model_dump(mode="python")
+                
+                # Navigate the nested structure
+                parts = path.split('.')
+                for part in parts:
+                    if isinstance(current, dict) and part in current:
+                        current = current[part]
+                    else:
+                        current = None
+                        break
+                
+                # Check if we found a match
+                if current == value:
+                    return True
+        
+        return False
 
 class SQLBackend(StorageBackend):
     """SQL storage backend supporting both SQLite and PostgreSQL with proper connection pooling."""
@@ -478,5 +515,87 @@ class SQLBackend(StorageBackend):
                 .limit(limit)
             )
             return [self._create_thread_from_record(record) for record in result.scalars().all()] 
+        finally:
+            await session.close()
+
+    async def find_messages_by_attribute(self, path: str, value: Any) -> bool:
+        """
+        Check if any messages exist with a specific attribute at a given JSON path.
+        Uses efficient SQL JSON path queries for PostgreSQL and falls back to
+        SQLite JSON functions when needed.
+        
+        Args:
+            path: Dot-notation path to the attribute (e.g., "source.platform.attributes.ts")
+            value: The value to search for
+            
+        Returns:
+            True if any messages match, False otherwise
+        """
+        session = await self._get_session()
+        try:
+            # Convert path to the right format for SQL
+            path_parts = path.split('.')
+            
+            # Convert value to string for comparison
+            str_value = str(value) if value is not None else None
+            
+            # Build query based on database type
+            if self.database_url.startswith('sqlite'):
+                # Build SQLite JSON path (SQLite uses $ as root)
+                sqlite_path = "$"
+                for part in path_parts:
+                    sqlite_path += f".{part}"
+                
+                # Use SQLite's json_extract function
+                query = text(f"""
+                    SELECT COUNT(*) FROM messages 
+                    WHERE json_extract(source, :path) = :value
+                """).bindparams(path=sqlite_path, value=str_value)
+            else:
+                # PostgreSQL JSON path
+                # Start with the first part to determine which JSON column to search
+                root = path_parts[0]
+                
+                # Determine which column to search based on the root
+                if root == "source":
+                    # PostgreSQL JSON path for nested attributes
+                    # For source.platform.attributes.ts, we need:
+                    # source->'platform'->'attributes'->>'ts'
+                    # The -> operator keeps the result as JSON for nesting
+                    # The ->> operator extracts the final value as text
+                    
+                    pg_path = "source"
+                    for i, part in enumerate(path_parts[1:]):
+                        if i == len(path_parts[1:]) - 1:
+                            # Last part uses ->> to extract as text
+                            pg_path += f"->>'{part}'"
+                        else:
+                            # Inner parts use -> to keep as JSON
+                            pg_path += f"->'{part}'"
+                    
+                    # Query using PostgreSQL JSON operators with proper nesting
+                    query = text(f"""
+                        SELECT COUNT(*) FROM messages 
+                        WHERE {pg_path} = :value
+                    """).bindparams(value=str_value)
+                else:
+                    # For other columns or complex paths
+                    # This is a simplified implementation - for more complex paths,
+                    # you would need to build the PostgreSQL JSON path expressions accordingly
+                    logger.warning(f"Complex path: {path} - using simplified query")
+                    query = text(f"""
+                        SELECT COUNT(*) FROM messages 
+                        WHERE source::text LIKE :search_pattern
+                    """).bindparams(search_pattern=f"%{str_value}%")
+            
+            # Execute query and get count
+            result = await session.execute(query)
+            count = result.scalar()
+            
+            # Return True if we found any messages
+            return count > 0
+        except Exception as e:
+            logger.error(f"Error in find_messages_by_attribute: {str(e)}")
+            return False  # On error, assume no match
         finally:
             await session.close() 

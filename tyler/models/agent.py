@@ -112,6 +112,7 @@ class Agent(Model):
     name: str = Field(default="Tyler")
     purpose: str = Field(default="To be a helpful assistant.")
     notes: str = Field(default="")
+    version: str = Field(default="1.0.0")
     tools: List[Union[str, Dict]] = Field(default_factory=list, description="List of tools available to the agent. Can include built-in tool module names (as strings) and custom tools (as dicts with required 'definition' and 'implementation' keys, and an optional 'attributes' key for tool metadata). For built-in tools, you can specify specific tools to include using the format 'module:tool1,tool2'.")
     max_tool_iterations: int = Field(default=10)
     thread_store: Optional[ThreadStore] = Field(default=None, description="Thread storage implementation. Uses ThreadStore with memory backend by default.")
@@ -121,6 +122,7 @@ class Agent(Model):
     _prompt: AgentPrompt = PrivateAttr(default_factory=AgentPrompt)
     _iteration_count: int = PrivateAttr(default=0)
     _processed_tools: List[Dict] = PrivateAttr(default_factory=list)
+    _system_prompt: str = PrivateAttr(default="")
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -129,14 +131,18 @@ class Agent(Model):
 
     def __init__(self, **data):
         # Initialize thread_store before super().__init__ if not provided
-        if 'thread_store' not in data:
+        if 'thread_store' not in data or data['thread_store'] is None:
             data['thread_store'] = ThreadStore()
         
         # Initialize file_store if not provided
-        if 'file_store' not in data:
+        if 'file_store' not in data or data['file_store'] is None:
             data['file_store'] = FileStore()
             
         super().__init__(**data)
+        
+        # Generate system prompt once at initialization
+        self._prompt = AgentPrompt()
+        self._system_prompt = self._prompt.system_prompt(self.purpose, self.name, self.model_name, self.notes)
         
         # Load tools
         self._processed_tools = []
@@ -283,9 +289,15 @@ class Agent(Model):
         Returns:
             Tuple[Any, Dict]: The completion response and metrics.
         """
+        # Get thread messages (these won't include system messages as they're filtered out)
+        thread_messages = await thread.get_messages_for_chat_completion(file_store=self.file_store)
+        
+        # Create completion messages with ephemeral system prompt at the beginning
+        completion_messages = [{"role": "system", "content": self._system_prompt}] + thread_messages
+        
         completion_params = {
             "model": self.model_name,
-            "messages": await thread.get_messages_for_chat_completion(file_store=self.file_store),
+            "messages": completion_messages,
             "temperature": self.temperature,
             "stream": stream
         }
@@ -348,7 +360,21 @@ class Agent(Model):
             return response, metrics
         except Exception as e:
             error_text = f"I encountered an error: {str(e)}"
-            error_msg = Message(role='assistant', content=error_text)
+            error_msg = Message(
+                role='assistant', 
+                content=error_text,
+                source={
+                    "entity": {
+                        "id": self.name,
+                        "name": self.name,
+                        "type": "agent",
+                        "attributes": {
+                            "model": self.model_name,
+                            "purpose": self.purpose
+                        }
+                    }
+                }
+            )
             error_msg.metrics = {"error": str(e)}
             thread.add_message(error_msg)
             return thread, [error_msg]
@@ -434,6 +460,7 @@ class Agent(Model):
                 name=tool_name,
                 content=content,
                 tool_call_id=tool_call.get('id') if isinstance(tool_call, dict) else tool_call.id,
+                source=self._create_tool_source(tool_name),
                 metrics={
                     "timing": {
                         "started_at": tool_start_time.isoformat(),
@@ -471,11 +498,12 @@ class Agent(Model):
             error_message = Message(
                 role="tool",
                 name=tool_name,
-                content=error_msg,
+                content=f"Error: {e}",
                 tool_call_id=tool_call.get('id') if isinstance(tool_call, dict) else tool_call.id,
+                source=self._create_tool_source(tool_name),
                 metrics={
                     "timing": {
-                        "started_at": tool_start_time.isoformat(),
+                        "started_at": datetime.now(UTC).isoformat(),
                         "ended_at": datetime.now(UTC).isoformat(),
                         "latency": (datetime.now(UTC) - tool_start_time).total_seconds() * 1000
                     }
@@ -491,7 +519,8 @@ class Agent(Model):
         """Handle the case when max iterations is reached."""
         message = Message(
             role="assistant",
-            content="Maximum tool iteration count reached. Stopping further tool calls."
+            content="Maximum tool iteration count reached. Stopping further tool calls.",
+            source=self._create_assistant_source(include_version=False)
         )
         thread.add_message(message)
         new_messages.append(message)
@@ -530,9 +559,6 @@ class Agent(Model):
             except ValueError:
                 raise  # Re-raise ValueError for thread not found
             
-            system_prompt = self._prompt.system_prompt(self.purpose, self.name, self.model_name, self.notes)
-            thread.ensure_system_prompt(system_prompt)
-            
             # Check if we've already hit max iterations
             if self._iteration_count >= self.max_tool_iterations:
                 return await self._handle_max_iterations(thread, new_messages)
@@ -549,6 +575,7 @@ class Agent(Model):
                         message = Message(
                             role="assistant",
                             content=f"I encountered an error: {error_msg}. Please try again.",
+                            source=self._create_assistant_source(include_version=False),
                             metrics={
                                 "timing": {
                                     "started_at": datetime.now(UTC).isoformat(),
@@ -576,6 +603,7 @@ class Agent(Model):
                             role="assistant",
                             content=pre_tool,
                             tool_calls=self._serialize_tool_calls(tool_calls) if has_tool_calls else None,
+                            source=self._create_assistant_source(include_version=True),
                             metrics=metrics
                         )
                         thread.add_message(message)
@@ -606,6 +634,7 @@ class Agent(Model):
                                     name=tool_name,
                                     content=error_msg,
                                     tool_call_id=tool_call.id if hasattr(tool_call, 'id') else tool_call.get('id'),
+                                    source=self._create_tool_source(tool_name),
                                     metrics={
                                         "timing": {
                                             "started_at": datetime.now(UTC).isoformat(),
@@ -637,6 +666,7 @@ class Agent(Model):
                                 name=tool_name,
                                 content=content,
                                 tool_call_id=tool_call.id if hasattr(tool_call, 'id') else tool_call.get('id'),
+                                source=self._create_tool_source(tool_name),
                                 metrics={
                                     "timing": {
                                         "started_at": datetime.now(UTC).isoformat(),
@@ -686,6 +716,7 @@ class Agent(Model):
                     message = Message(
                         role="assistant",
                         content=f"I encountered an error: {error_msg}. Please try again.",
+                        source=self._create_assistant_source(include_version=False),
                         metrics={
                             "timing": {
                                 "started_at": datetime.now(UTC).isoformat(),
@@ -706,13 +737,7 @@ class Agent(Model):
                 message = Message(
                     role="assistant",
                     content="Maximum tool iteration count reached. Stopping further tool calls.",
-                    metrics={
-                        "timing": {
-                            "started_at": datetime.now(UTC).isoformat(),
-                            "ended_at": datetime.now(UTC).isoformat(),
-                            "latency": 0
-                        }
-                    }
+                    source=self._create_assistant_source(include_version=False)
                 )
                 thread.add_message(message)
                 new_messages.append(message)
@@ -732,6 +757,7 @@ class Agent(Model):
             message = Message(
                 role="assistant",
                 content=f"I encountered an error: {error_msg}. Please try again.",
+                source=self._create_assistant_source(include_version=False),
                 metrics={
                     "timing": {
                         "started_at": datetime.now(UTC).isoformat(),
@@ -767,10 +793,6 @@ class Agent(Model):
             - Any errors that occur
         """
         try:
-            # Initialize thread with system prompt like in go
-            system_prompt = self._prompt.system_prompt(self.purpose, self.name, self.model_name, self.notes)
-            thread.ensure_system_prompt(system_prompt)
-            
             self._iteration_count = 0
             current_content = []  # Accumulate content chunks
             current_tool_calls = []  # Accumulate tool calls
@@ -783,7 +805,8 @@ class Agent(Model):
             if self._iteration_count >= self.max_tool_iterations:
                 message = Message(
                     role="assistant",
-                    content="Maximum tool iteration count reached. Stopping further tool calls."
+                    content="Maximum tool iteration count reached. Stopping further tool calls.",
+                    source=self._create_assistant_source(include_version=False)
                 )
                 thread.add_message(message)
                 yield StreamUpdate(StreamUpdate.Type.ASSISTANT_MESSAGE, message)
@@ -802,6 +825,7 @@ class Agent(Model):
                         message = Message(
                             role="assistant",
                             content=f"I encountered an error: {error_msg}. Please try again.",
+                            source=self._create_assistant_source(include_version=False),
                             metrics={
                                 "timing": {
                                     "started_at": datetime.now(UTC).isoformat(),
@@ -915,6 +939,7 @@ class Agent(Model):
                         role="assistant",
                         content=content,
                         tool_calls=current_tool_calls if current_tool_calls else None,
+                        source=self._create_assistant_source(include_version=True),
                         metrics=metrics  # metrics from step() already includes model name
                     )
                     thread.add_message(assistant_message)
@@ -940,14 +965,24 @@ class Agent(Model):
                             # Parse arguments to ensure valid JSON
                             try:
                                 parsed_args = json.loads(args)
-                            except json.JSONDecodeError:
+                            except json.JSONDecodeError as json_err:
                                 # If invalid JSON, try to fix common streaming artifacts
-                                args = args.strip().rstrip(',').rstrip('"')
-                                if not args.endswith('}'):
-                                    args += '}'
-                                if not args.startswith('{'):
-                                    args = '{' + args
-                                parsed_args = json.loads(args)
+                                try:
+                                    args = args.strip().rstrip(',').rstrip('"')
+                                    if not args.endswith('}'):
+                                        args += '}'
+                                    if not args.startswith('{'):
+                                        args = '{' + args
+                                    parsed_args = json.loads(args)
+                                except json.JSONDecodeError:
+                                    # If fix attempt fails, create error message with expected format and raise
+                                    error_msg = f"Tool execution failed: Invalid JSON in tool arguments: {json_err}"
+                                    yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
+                                    # Save on error
+                                    if self.thread_store:
+                                        await self.thread_store.save(thread)
+                                    # Break out of the inner loop and continue to the next iteration
+                                    raise ValueError(error_msg)
 
                             tool_call['function']['arguments'] = json.dumps(parsed_args)
                             
@@ -970,7 +1005,8 @@ class Agent(Model):
                                     role="tool",
                                     name=tool_name,
                                     content=error_msg,
-                                    tool_call_id=tool_call['id'],
+                                    tool_call_id=tool_call.get('id') if isinstance(tool_call, dict) else tool_call.id,
+                                    source=self._create_tool_source(tool_name),
                                     metrics={
                                         "timing": {
                                             "started_at": datetime.now(UTC).isoformat(),
@@ -1002,7 +1038,8 @@ class Agent(Model):
                                 role="tool",
                                 name=tool_name,
                                 content=content,
-                                tool_call_id=tool_call['id'],
+                                tool_call_id=tool_call.get('id') if isinstance(tool_call, dict) else tool_call.id,
+                                source=self._create_tool_source(tool_name),
                                 metrics={
                                     "timing": {
                                         "started_at": datetime.now(UTC).isoformat(),
@@ -1044,8 +1081,11 @@ class Agent(Model):
                     except Exception as e:
                         error_msg = f"Tool execution failed: {str(e)}"
                         error_message = Message(
-                            role="assistant",
-                            content=f"I encountered an error: {error_msg}. Please try again.",
+                            role="tool",
+                            name=tool_name,
+                            content=error_msg,
+                            tool_call_id=tool_call.get('id') if isinstance(tool_call, dict) else tool_call.id,
+                            source=self._create_tool_source(tool_name),
                             metrics={
                                 "timing": {
                                     "started_at": datetime.now(UTC).isoformat(),
@@ -1081,6 +1121,7 @@ class Agent(Model):
                     error_message = Message(
                         role="assistant",
                         content=f"I encountered an error: {error_msg}. Please try again.",
+                        source=self._create_assistant_source(include_version=False),
                         metrics={
                             "timing": {
                                 "started_at": datetime.now(UTC).isoformat(),
@@ -1102,13 +1143,7 @@ class Agent(Model):
                 message = Message(
                     role="assistant",
                     content="Maximum tool iteration count reached. Stopping further tool calls.",
-                    metrics={
-                        "timing": {
-                            "started_at": datetime.now(UTC).isoformat(),
-                            "ended_at": datetime.now(UTC).isoformat(),
-                            "latency": 0
-                        }
-                    }
+                    source=self._create_assistant_source(include_version=False)
                 )
                 thread.add_message(message)
                 new_messages.append(message)
@@ -1127,6 +1162,7 @@ class Agent(Model):
             error_message = Message(
                 role="assistant",
                 content=f"I encountered an error: {error_msg}. Please try again.",
+                source=self._create_assistant_source(include_version=False),
                 metrics={
                     "timing": {
                         "started_at": datetime.now(UTC).isoformat(),
@@ -1146,3 +1182,34 @@ class Agent(Model):
         finally:
             # Finally block intentionally left empty
             pass 
+
+    @weave.op()
+    def _create_tool_source(self, tool_name: str) -> Dict:
+        """Creates a standardized source entity dict for tool messages."""
+        return {
+            "entity": {
+                "id": tool_name,
+                "name": tool_name,
+                "type": "tool",
+                "attributes": {
+                    "agent_id": self.name
+                }
+            }
+        }
+
+    @weave.op()
+    def _create_assistant_source(self, include_version: bool = True) -> Dict:
+        """Creates a standardized source entity dict for assistant messages."""
+        attributes = {
+            "model": self.model_name,
+            "purpose": self.purpose
+        }
+        
+        return {
+            "entity": {
+                "id": self.name,
+                "name": self.name,
+                "type": "agent",
+                "attributes": attributes
+            }
+        } 

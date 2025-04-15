@@ -11,6 +11,7 @@ The `ThreadStore` class provides a unified interface for thread storage with plu
 ```python
 from tyler.database.thread_store import ThreadStore
 
+# RECOMMENDED: Factory pattern for immediate connection validation
 # PostgreSQL
 store = await ThreadStore.create("postgresql+asyncpg://user:pass@localhost/dbname")
 
@@ -19,6 +20,9 @@ store = await ThreadStore.create("sqlite+aiosqlite:///path/to/db.sqlite")
 
 # In-memory
 store = await ThreadStore.create()  # No URL for memory backend
+
+# For backward compatibility: Direct constructor (connects on first operation)
+store = ThreadStore("postgresql+asyncpg://user:pass@localhost/dbname")
 ```
 
 The factory pattern immediately connects to the database, allowing you to:
@@ -26,56 +30,44 @@ The factory pattern immediately connects to the database, allowing you to:
 - Fail fast if there are connection problems
 - Ensure the store is fully ready to use
 
-### Configuration
+### Connection Pooling Configuration
 
-Environment variables:
+Environment variables for connection pooling:
 ```bash
-# Database type
-TYLER_DB_TYPE=postgresql    # Use PostgreSQL backend
-TYLER_DB_TYPE=sqlite        # Use SQLite backend
-
-# PostgreSQL configuration (required when TYLER_DB_TYPE=postgresql)
-TYLER_DB_HOST=localhost     # Database host
-TYLER_DB_PORT=5432          # Database port
-TYLER_DB_NAME=tyler         # Database name
-TYLER_DB_USER=tyler_user    # Database user
-TYLER_DB_PASSWORD=password  # Database password
-
-# SQLite configuration (required when TYLER_DB_TYPE=sqlite)
-TYLER_DB_PATH=/path/to/db.sqlite  # Path to SQLite database file
-
-# Optional settings
-TYLER_DB_ECHO=true          # Enable SQL logging
-TYLER_DB_POOL_SIZE=10       # Connection pool size
-TYLER_DB_MAX_OVERFLOW=20    # Max additional connections
+# Connection pool settings
+TYLER_DB_POOL_SIZE=5       # Max number of connections to keep open
+TYLER_DB_MAX_OVERFLOW=10   # Max additional connections above pool_size
+TYLER_DB_POOL_TIMEOUT=30   # Seconds to wait for a connection from pool
+TYLER_DB_POOL_RECYCLE=300  # Seconds after which a connection is recycled
 ```
 
 ## Methods
 
-### save
+### initialize
 
-Save a thread to storage.
+Initialize the storage backend.
 
 ```python
-async def save(self, thread: Thread, file_store: Optional[FileStore] = None) -> Thread
+async def initialize(self) -> None
 ```
 
-Creates or updates thread and all messages. Returns saved thread. If the thread contains messages with attachments, a file_store instance must be provided to process them.
+Initializes the underlying storage backend. Called automatically by the factory method or on first operation if using the direct constructor.
+
+### save
+
+Save a thread to storage, filtering out system messages.
+
+```python
+async def save(self, thread: Thread) -> Thread
+```
+
+Creates or updates thread and all non-system messages. System messages are never saved because they are ephemeral and injected by agents at completion time.
 
 Example:
 ```python
 thread = Thread()
 thread.add_message(Message(role="user", content="Hello"))
 saved_thread = await store.save(thread)
-
-# With file attachment
-message = Message(role="user", content="Here's a document")
-message.add_attachment(pdf_bytes, filename="document.pdf")
-thread.add_message(message)
-
-# FileStore needed when attachments are present
-file_store = await FileStore.create()
-saved_thread = await store.save(thread, file_store=file_store)
 ```
 
 ### get
@@ -223,17 +215,6 @@ def engine(self) -> Optional[Any]
 
 Returns the SQLAlchemy engine or None for memory backend.
 
-### async_session
-
-Get the SQLAlchemy async session factory if using SQL backend.
-
-```python
-@property
-def async_session(self) -> Optional[Any]
-```
-
-Returns the SQLAlchemy async session factory or None for memory backend.
-
 ## Backend Types
 
 ### MemoryBackend
@@ -257,9 +238,31 @@ store = await ThreadStore.create("postgresql+asyncpg://user:pass@localhost/dbnam
 store = await ThreadStore.create("sqlite+aiosqlite:///path/to/db.sqlite")
 ```
 
+## System Message Handling
+
+System messages are never saved by the `ThreadStore`. This is by design:
+
+1. System messages are ephemeral and controlled by agents
+2. Each agent can inject its own system message at completion time
+3. This allows the same thread to be used by different agents with different system prompts
+4. When a thread is retrieved from storage, any system messages will need to be added again by the agent
+
+```python
+# System messages are never saved
+thread = Thread()
+thread.add_message(Message(role="system", content="You are an assistant"))
+thread.add_message(Message(role="user", content="Hello"))
+await thread_store.save(thread)
+
+# When retrieved, only the user message is present
+retrieved = await thread_store.get(thread.id)
+system_messages = [m for m in retrieved.messages if m.role == "system"]
+print(len(system_messages))  # 0
+```
+
 ## Best Practices
 
-1. **Connect at Startup**
+1. **Use Factory Pattern**
    ```python
    # Connect and validate at startup
    try:
@@ -280,10 +283,6 @@ store = await ThreadStore.create("sqlite+aiosqlite:///path/to/db.sqlite")
    
    # For production
    store = await ThreadStore.create("postgresql+asyncpg://user:pass@host/dbname")
-   
-   # Using environment variables
-   # Set TYLER_DB_TYPE and other required variables
-   store = await ThreadStore.create()  # Will use configured database type
    ```
 
 3. **Error Handling**
@@ -336,36 +335,20 @@ store = await ThreadStore.create("sqlite+aiosqlite:///path/to/db.sqlite")
    )
    ```
 
-6. **Attachment Processing**
+6. **System Message Awareness**
    ```python
-   # Attachments are automatically processed when saving a thread
-   message = Message(role="user", content="Here's a file")
-   message.add_attachment(file_bytes, filename="document.pdf")
-   thread.add_message(message)
+   # Remember that system messages aren't stored
+   agent = Agent(thread_store=store)
    
-   # Need to create and pass a FileStore to process attachments
-   file_store = await FileStore.create()
+   # When retrieving a thread, the agent will need to add its system message
+   thread = await store.get(thread_id)
    
-   # Save with file_store to process and store all attachments
-   await store.save(thread, file_store=file_store)
-   ```
-
-7. **Environment Variable Configuration**
-   ```python
-   # Set required environment variables
-   os.environ["TYLER_DB_TYPE"] = "postgresql"
-   os.environ["TYLER_DB_HOST"] = "localhost"
-   os.environ["TYLER_DB_PORT"] = "5432"
-   os.environ["TYLER_DB_NAME"] = "tyler"
-   os.environ["TYLER_DB_USER"] = "tyler_user"
-   os.environ["TYLER_DB_PASSWORD"] = "password"
-   
-   # Create store using environment variables
-   store = await ThreadStore.create()  # Will connect to PostgreSQL
+   # The agent adds its own system message before processing
+   await agent.go(thread)
    ```
 
 ## See Also
 
 - [Thread API](./thread.md)
 - [Message API](./message.md)
-- [Attachment API](./attachment.md) 
+- [Agent API](./agent.md) 

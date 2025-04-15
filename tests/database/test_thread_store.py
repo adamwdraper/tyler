@@ -428,7 +428,7 @@ async def test_thread_store_pagination():
 
 @pytest.mark.asyncio
 async def test_message_sequence_preservation(thread_store):
-    """Test that message sequences are preserved correctly in database"""
+    """Test that message sequences are preserved correctly in database while system messages are filtered"""
     # Create a thread with system and non-system messages
     thread = Thread(id="test-thread")
     thread.add_message(Message(role="user", content="First user message"))
@@ -436,26 +436,30 @@ async def test_message_sequence_preservation(thread_store):
     thread.add_message(Message(role="system", content="System message"))
     thread.add_message(Message(role="user", content="Second user message"))
     
-    # Save thread
-    await thread_store.save(thread)
+    # Keep track of original message count
+    original_message_count = len(thread.messages)
     
-    # Retrieve thread
+    # Save thread
+    saved_thread = await thread_store.save(thread)
+    
+    # Original thread should still have system message intact
+    assert len(saved_thread.messages) == original_message_count
+    assert any(m.role == "system" for m in saved_thread.messages)
+    
+    # Retrieve thread from database
     loaded_thread = await thread_store.get(thread.id)
     
-    # Verify sequences
-    assert len(loaded_thread.messages) == 4
-    assert loaded_thread.messages[0].role == "system"
-    assert loaded_thread.messages[0].sequence == 0
+    # Verify system messages are not present in the loaded thread
+    assert len(loaded_thread.messages) == 3, "Expected only non-system messages to be persisted"
+    assert all(m.role != "system" for m in loaded_thread.messages), "System messages should not be persisted"
     
-    # Get non-system messages in order
-    non_system = [m for m in loaded_thread.messages if m.role != "system"]
-    assert len(non_system) == 3
-    assert non_system[0].content == "First user message"
-    assert non_system[0].sequence == 1
-    assert non_system[1].content == "First assistant message"
-    assert non_system[1].sequence == 2
-    assert non_system[2].content == "Second user message"
-    assert non_system[2].sequence == 3
+    # Verify the non-system messages are in the correct order with proper sequences
+    assert loaded_thread.messages[0].content == "First user message"
+    assert loaded_thread.messages[0].sequence == 1
+    assert loaded_thread.messages[1].content == "First assistant message"
+    assert loaded_thread.messages[1].sequence == 2
+    assert loaded_thread.messages[2].content == "Second user message"
+    assert loaded_thread.messages[2].sequence == 3
 
 @pytest.mark.asyncio
 async def test_save_thread_with_attachments(thread_store):
@@ -643,4 +647,59 @@ async def test_explicit_sql_backend():
     """When an explicit URL is provided, ThreadStore should use SQLBackend."""
     test_url = "sqlite+aiosqlite:///test.db"
     store = ThreadStore(test_url)
-    assert isinstance(store._backend, SQLBackend) 
+    assert isinstance(store._backend, SQLBackend)
+
+@pytest.mark.asyncio
+async def test_system_messages_not_persisted(thread_store):
+    """Test that system messages are not persisted to storage"""
+    # Create a thread with system and non-system messages
+    thread = Thread(id="test-thread-system-filtering")
+    thread.add_message(Message(role="system", content="System message 1"))
+    thread.add_message(Message(role="user", content="User message"))
+    thread.add_message(Message(role="system", content="System message 2"))
+    thread.add_message(Message(role="assistant", content="Assistant message"))
+    
+    # Save thread
+    await thread_store.save(thread)
+    
+    # Retrieve thread
+    loaded_thread = await thread_store.get(thread.id)
+    
+    # Verify system messages are not present
+    assert len(loaded_thread.messages) == 2, "Expected only non-system messages to be persisted"
+    assert all(msg.role != "system" for msg in loaded_thread.messages), "System messages should not be persisted"
+    
+    # Verify the correct messages were saved
+    messages = loaded_thread.messages
+    assert len(messages) == 2
+    assert messages[0].role == "user"
+    assert messages[0].content == "User message"
+    assert messages[1].role == "assistant"
+    assert messages[1].content == "Assistant message"
+
+@pytest.mark.asyncio
+async def test_system_prompt_preserved_in_memory():
+    """Test that system messages are preserved in memory even if not persisted"""
+    # Create thread store with memory backend
+    store = await ThreadStore.create()
+    
+    # Create a thread with system messages
+    thread = Thread()
+    thread.add_message(Message(role="system", content="System prompt"))
+    thread.add_message(Message(role="user", content="User message"))
+    
+    # Make a copy before saving
+    original_message_count = len(thread.messages)
+    has_system_message = any(msg.role == "system" for msg in thread.messages)
+    
+    # Save and retrieve thread
+    await store.save(thread)
+    retrieved_thread = await store.get(thread.id)
+    
+    # Verify system message is not in retrieved thread
+    assert len(retrieved_thread.messages) < original_message_count, "System message should be filtered out"
+    assert not any(msg.role == "system" for msg in retrieved_thread.messages), "System messages should not be persisted"
+    
+    # But the original thread object should still have its system message
+    assert has_system_message, "Original thread should have system message"
+    assert any(msg.role == "system" for msg in thread.messages), "Original thread should still have system message after save" 
