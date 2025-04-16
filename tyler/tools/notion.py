@@ -329,6 +329,53 @@ def search(query: Optional[str] = None, filter: Optional[Dict] = None,
     client = create_notion_client()
     return client.search(query=query, filter=filter, start_cursor=start_cursor, page_size=page_size)
 
+@weave.op(name="notion-list_pages")
+def list_pages() -> Dict:
+    """Get a simplified list of all available pages in Notion.
+    Returns only essential metadata for each page."""
+    # Use empty search to get all pages with hardcoded page_size=25
+    result = search(query="", filter={"value": "page", "property": "object"}, page_size=50)
+    
+    # Clean up each result to only include essential properties
+    simplified_results = []
+    for page in result.get("results", []):
+        simplified_page = {
+            "id": page.get("id"),
+            "created_time": page.get("created_time"),
+            "last_edited_time": page.get("last_edited_time"),
+            "archived": page.get("archived"),
+            "in_trash": page.get("in_trash"),
+            "url": page.get("url"),
+            "public_url": page.get("public_url"),
+            "title": ""
+        }
+        
+        # Extract the page title from properties
+        if "properties" in page:
+            # First check for a title property
+            if "title" in page["properties"]:
+                title_property = page["properties"]["title"]
+                if "title" in title_property and title_property["title"]:
+                    simplified_page["title"] = "".join([t.get("plain_text", "") for t in title_property["title"]])
+            # Then check for a Page property that some pages might use instead
+            elif "Page" in page["properties"]:
+                page_property = page["properties"]["Page"]
+                if "title" in page_property and page_property["title"]:
+                    simplified_page["title"] = "".join([t.get("plain_text", "") for t in page_property["title"]])
+        
+        simplified_results.append(simplified_page)
+    
+    # Return the same structure but with simplified results
+    return {
+        "object": result.get("object"),
+        "results": simplified_results,
+        "next_cursor": result.get("next_cursor"),
+        "has_more": result.get("has_more"),
+        "type": result.get("type"),
+        "page_or_database": result.get("page_or_database", {}),
+        "request_id": result.get("request_id")
+    }
+
 @weave.op(name="notion-get_page")
 def get_page(page_id: str) -> Dict:
     """Get a page by ID"""
@@ -446,6 +493,20 @@ TOOLS = [
             }
         },
         "implementation": search
+    },
+    {
+        "definition": {
+            "type": "function",
+            "function": {
+                "name": "notion-list_pages",
+                "description": "Retrieves a list of all accessible Notion pages with minimal metadata. Useful for discovering available pages without extra details. Returns only essential information: id, title, creation/edit times, archived status, and URLs.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        "implementation": list_pages
     },
     {
         "definition": {
