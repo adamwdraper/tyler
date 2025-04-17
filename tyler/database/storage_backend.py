@@ -359,7 +359,7 @@ class SQLBackend(StorageBackend):
                     # For test compatibility - convert database errors to RuntimeError
                     # This helps maintain backward compatibility with tests expecting RuntimeError
                     logger.error(f"Database error during commit: {str(e)}")
-                    raise RuntimeError(f"Failed to save thread: Database error") from e
+                    raise RuntimeError(f"Failed to save thread: Database error - {str(e)}") from e
                 return thread
                 
         except Exception as e:
