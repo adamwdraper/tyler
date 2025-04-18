@@ -76,6 +76,8 @@ async def generate_slack_blocks(*, content: str) -> dict:
     - Use ONLY official Slack block types: section, context, divider, image, actions, header, input, file, video, markdown
     - For bullet points or lists, use a section block with markdown formatting using * or •
     - Do not use any custom or unsupported block types
+    - When using mrkdwn text type in section or context blocks, format links as <URL|text> NOT as [text](URL)
+    - The markdown block type does support standard markdown links [text](URL)
 
     Respond with JSON containing two fields:
     1. 'blocks': An array of Slack blocks where each block has a 'type' field
