@@ -69,8 +69,9 @@ async def generate_slack_blocks(*, content: str) -> dict:
     """
     prompt = f"""
     Convert the following content into Slack blocks format:
-
+    ```
     {content}
+    ```
 
     IMPORTANT GUIDELINES:
     - Use ONLY official Slack block types: section, context, divider, image, actions, header, input, file, video, markdown
