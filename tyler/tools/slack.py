@@ -2,7 +2,7 @@ import os
 import json
 import slack_sdk
 import weave
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 import litellm
 
 class SlackClient:
@@ -14,7 +14,7 @@ class SlackClient:
         self.client = slack_sdk.WebClient(token=self.token)
 
 @weave.op(name="slack-post_to_slack")
-def post_to_slack(*, channel: str, blocks: List[Dict]) -> bool:
+def post_to_slack(*, channel: str, blocks: List[Dict], text: str = None) -> bool:
     """
     Post blocks to a specified Slack channel.
 
@@ -23,6 +23,7 @@ def post_to_slack(*, channel: str, blocks: List[Dict]) -> bool:
             - A channel ID starting with 'C'
             - A channel name (with or without '#' prefix)
         blocks (List[Dict]): A list of block kit blocks to be posted to Slack.
+        text (str, optional): Text to use as fallback content and for notifications.
 
     Returns:
         bool: True if the message was posted successfully, False otherwise.
@@ -33,12 +34,14 @@ def post_to_slack(*, channel: str, blocks: List[Dict]) -> bool:
             if not channel.startswith('#'):
                 channel = f'#{channel}'
 
-        # Extract fallback text from first text block
-        fallback_text = None
-        for block in blocks:
-            if block.get('type') == 'section' and block.get('text', {}).get('text'):
-                fallback_text = block['text']['text']
-                break
+        # Extract fallback text from first text block if not provided
+        fallback_text = text
+        if not fallback_text and blocks:
+            for block in blocks:
+                if block.get('type') == 'section' and block.get('text', {}).get('text'):
+                    fallback_text = block['text']['text']
+                    break
+        
         if not fallback_text:
             fallback_text = "Message with block content"
 
@@ -54,7 +57,7 @@ def post_to_slack(*, channel: str, blocks: List[Dict]) -> bool:
         return False
 
 @weave.op(name="slack-generate_slack_blocks")
-def generate_slack_blocks(*, content: str) -> List[Dict]:
+async def generate_slack_blocks(*, content: str) -> dict:
     """
     Generate Slack blocks from the given content using a chat completion.
 
@@ -62,28 +65,34 @@ def generate_slack_blocks(*, content: str) -> List[Dict]:
         content (str): The content to be formatted for Slack.
 
     Returns:
-        List[Dict]: A list of Slack blocks.
+        dict: A dictionary with 'blocks' containing Slack blocks and 'text' containing a plain text fallback.
     """
     prompt = f"""
     Convert the following content into Slack blocks format:
 
     {content}
 
-    Respond with only the JSON for the Slack blocks. Do not include any explanations or additional text.
+    Respond with JSON containing two fields:
+    1. 'blocks': An array of Slack blocks where each block has a 'type' field
+    2. 'text': A plain text version (no markdown) for accessibility/fallback
+
+    Important: The 'blocks' array should contain properly formatted Slack blocks.
     """
 
     try:
-        response = litellm.completion(
-            model="gpt-4",
+        # Use the async version of litellm.completion
+        response = await litellm.acompletion(
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7
+            temperature=0.7,
+            response_format={"type": "json_object"}
         )
 
         raw_content = response.choices[0].message.content.strip()
 
         # Attempt to parse the JSON
         try:
-            generated_blocks = json.loads(raw_content)
+            generated_response = json.loads(raw_content)
         except json.JSONDecodeError as json_err:            
             # Attempt to clean the content and parse again
             cleaned_content = raw_content.strip('`').strip()
@@ -91,33 +100,86 @@ def generate_slack_blocks(*, content: str) -> List[Dict]:
                 cleaned_content = cleaned_content[4:].strip()
             
             try:
-                generated_blocks = json.loads(cleaned_content)
+                generated_response = json.loads(cleaned_content)
             except json.JSONDecodeError:
                 # If it still fails, return a simple block with error message
-                return [{
+                return {
+                    "blocks": [{
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f"Error: Unable to generate valid Slack blocks."
+                        }
+                    }],
+                    "text": content  # Return original content as fallback
+                }
+
+        # Handle different response formats and ensure we return blocks and text
+        blocks = None
+        text_fallback = content  # Default to original content if extraction fails
+        
+        # First, try to extract the blocks based on the response format
+        if isinstance(generated_response, dict):
+            if 'blocks' in generated_response:
+                blocks = generated_response['blocks']
+                if 'text' in generated_response:
+                    text_fallback = generated_response['text']
+            elif 'type' in generated_response:
+                # It's a single block
+                blocks = [generated_response]
+        elif isinstance(generated_response, list):
+            if len(generated_response) > 0 and isinstance(generated_response[0], dict):
+                if 'blocks' in generated_response[0]:
+                    # It's like [{"blocks": [...]}]
+                    blocks = generated_response[0]['blocks']
+                    if 'text' in generated_response[0]:
+                        text_fallback = generated_response[0]['text']
+                elif 'type' in generated_response[0]:
+                    # It's a list of blocks
+                    blocks = generated_response
+        
+        # If we couldn't extract blocks, create a simple text section
+        if not blocks:
+            blocks = [{
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": content
+                }
+            }]
+            
+        # Validate that all blocks have a 'type' field
+        for block in blocks:
+            if not isinstance(block, dict) or 'type' not in block:
+                # Replace any invalid blocks with a text section
+                block.clear()
+                block.update({
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"Error: Unable to generate valid Slack blocks. Raw output:\n```\n{raw_content}\n```"
+                        "text": "Invalid block structure detected and repaired."
                     }
-                }]
-
-        # Validate the structure of the generated blocks
-        if not isinstance(generated_blocks, list):
-            generated_blocks = [generated_blocks]
-
-        return generated_blocks
+                })
+        
+        # Return both blocks and text fallback
+        return {
+            "blocks": blocks,
+            "text": text_fallback
+        }
 
     except Exception as e:
         # Handle any other exceptions
         error_message = f"An error occurred while generating Slack blocks: {str(e)}"
-        return [{
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": error_message
-            }
-        }] 
+        return {
+            "blocks": [{
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": error_message
+                }
+            }],
+            "text": content  # Return original content as fallback
+        }
 
 @weave.op(name="slack-send_ephemeral_message")
 def send_ephemeral_message(*, channel: str, user: str, text: str) -> bool:
@@ -246,6 +308,10 @@ TOOLS = [
                                     "text": {"type": "object"}
                                 }
                             }
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Text to use as fallback content and for notifications"
                         }
                     },
                     "required": ["channel", "blocks"]
