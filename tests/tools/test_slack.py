@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
+import asyncio
 from tyler.tools.slack import (
     SlackClient,
     post_to_slack,
@@ -60,38 +61,48 @@ def test_post_to_slack(mock_slack_client):
         text="Test message"
     )
 
-    # Test with channel ID
-    result = post_to_slack(channel="C1234567890", blocks=blocks)
+    # Test with channel ID and explicit text
+    result = post_to_slack(channel="C1234567890", blocks=blocks, text="Custom text")
     assert result is True
     mock_instance.client.chat_postMessage.assert_called_with(
         channel="C1234567890",
         blocks=blocks,
-        text="Test message"
+        text="Custom text"
     )
 
-@patch('litellm.completion')
-def test_generate_slack_blocks(mock_completion):
+@patch('litellm.acompletion')
+@pytest.mark.asyncio
+async def test_generate_slack_blocks(mock_acompletion):
     """Test generating Slack blocks from content"""
     mock_response = MagicMock()
     mock_response.choices = [
         MagicMock(
             message=MagicMock(
-                content='[{"type": "section", "text": {"type": "mrkdwn", "text": "Test content"}}]'
+                content='{"blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": "Test content"}}], "text": "Test content plain text"}'
             )
         )
     ]
-    mock_completion.return_value = mock_response
+    mock_acompletion.return_value = mock_response
 
-    result = generate_slack_blocks(content="Test content")
-    assert isinstance(result, list)
-    assert result[0]["type"] == "section"
-    assert result[0]["text"]["text"] == "Test content"
+    result = await generate_slack_blocks(content="Test content")
+    assert isinstance(result, dict)
+    assert "blocks" in result
+    assert "text" in result
+    assert result["blocks"][0]["type"] == "section"
+    assert result["blocks"][0]["text"]["text"] == "Test content"
+    assert result["text"] == "Test content plain text"
 
     # Test error handling with invalid JSON response
     mock_response.choices[0].message.content = "Invalid JSON"
-    result = generate_slack_blocks(content="Test content")
-    assert isinstance(result, list)
-    assert "Error" in result[0]["text"]["text"]
+    result = await generate_slack_blocks(content="Test content")
+    assert isinstance(result, dict)
+    assert "blocks" in result
+    assert "text" in result
+    assert isinstance(result["blocks"], list)
+    assert len(result["blocks"]) > 0
+    assert "type" in result["blocks"][0]
+    assert "text" in result["blocks"][0]
+    assert "Error" in result["blocks"][0]["text"]["text"]
 
 @patch('tyler.tools.slack.SlackClient')
 def test_send_ephemeral_message(mock_slack_client):
