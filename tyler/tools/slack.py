@@ -72,6 +72,11 @@ async def generate_slack_blocks(*, content: str) -> dict:
 
     {content}
 
+    IMPORTANT GUIDELINES:
+    - Use ONLY official Slack block types: section, context, divider, image, actions, header, input, file, video, markdown
+    - For bullet points or lists, use a section block with markdown formatting using * or •
+    - Do not use any custom or unsupported block types
+
     Respond with JSON containing two fields:
     1. 'blocks': An array of Slack blocks where each block has a 'type' field
     2. 'text': A plain text version (no markdown) for accessibility/fallback
@@ -82,7 +87,7 @@ async def generate_slack_blocks(*, content: str) -> dict:
     try:
         # Use the async version of litellm.completion
         response = await litellm.acompletion(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
             response_format={"type": "json_object"}
@@ -148,18 +153,42 @@ async def generate_slack_blocks(*, content: str) -> dict:
                 }
             }]
             
-        # Validate that all blocks have a 'type' field
-        for block in blocks:
+        # Validate and transform blocks
+        valid_block_types = ["section", "context", "divider", "image", "actions", "header", "input", "file", "video", "markdown"]
+        for i, block in enumerate(blocks):
             if not isinstance(block, dict) or 'type' not in block:
                 # Replace any invalid blocks with a text section
-                block.clear()
-                block.update({
+                blocks[i] = {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
                         "text": "Invalid block structure detected and repaired."
                     }
-                })
+                }
+            elif block["type"] not in valid_block_types:
+                # Convert any invalid block type to a section
+                # Try to extract useful text content
+                text_content = "Content converted from unsupported block type"
+                
+                # Try to get text from text field (common in many blocks)
+                if isinstance(block.get('text'), dict) and 'text' in block['text']:
+                    text_content = block['text']['text']
+                # Try to get text from any elements
+                elif isinstance(block.get('elements'), list):
+                    texts = []
+                    for element in block['elements']:
+                        if isinstance(element, dict) and 'text' in element:
+                            texts.append(element['text'])
+                    if texts:
+                        text_content = "\n• " + "\n• ".join(texts)
+                
+                blocks[i] = {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": text_content
+                    }
+                }
         
         # Return both blocks and text fallback
         return {
