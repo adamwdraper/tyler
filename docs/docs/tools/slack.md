@@ -27,7 +27,7 @@ Required bot token scopes:
 
 ## Available tools
 
-### Slack-post to slack
+### slack-post_to_slack
 
 Posts a message to a Slack channel. The tool is careful about channel selection and requires explicit channel specification.
 
@@ -38,8 +38,8 @@ Posts a message to a Slack channel. The tool is careful about channel selection 
   - Can be:
     - Public channel name (e.g., "general")
     - Private channel name
-    - Channel ID
-  - Note: Be cautious with public channels
+    - Channel ID (starting with 'C')
+  - If a channel name is provided without '#', it will be automatically added
 
 - `blocks` (array, required)
   - The blocks to post to Slack
@@ -47,6 +47,10 @@ Posts a message to a Slack channel. The tool is careful about channel selection 
     - `type` (string): Block type (e.g., "section", "header")
     - `text` (object): Text content
   - Supports full [Slack Block Kit](https://api.slack.com/block-kit) format
+
+- `text` (string, optional)
+  - Text to use as fallback content and for notifications
+  - If not provided, will attempt to extract from the first text block
 
 #### Example Usage
 
@@ -74,7 +78,95 @@ message = {
 # Agent will use this configuration to post to Slack
 ```
 
-### Slack-create channel
+### slack-generate_slack_blocks
+
+Generates properly formatted Slack blocks from content. This tool helps create visually appealing and well-structured messages for Slack.
+
+#### Parameters
+
+- `content` (string, required)
+  - The content to be formatted for Slack
+  - Can include formatting instructions, lists, headers, etc.
+
+#### Returns
+
+- A dictionary containing:
+  - `blocks` (array): Properly formatted Slack blocks
+  - `text` (string): Plain text fallback version for notifications
+
+#### Example Usage
+
+```python
+content = """
+# Project Update
+The team has made significant progress:
+* Frontend redesign is 80% complete
+* Backend API is fully operational
+* Testing will begin next week
+
+Please provide feedback by Friday.
+"""
+
+# This will be converted to proper Slack blocks with formatting
+```
+
+### slack-send_ephemeral_message
+
+Sends an ephemeral message that's only visible to a specific user in a channel.
+
+#### Parameters
+
+- `channel` (string, required)
+  - The channel to send the message to
+  - Can be a channel ID or name
+
+- `user` (string, required)
+  - The user ID who should see the message
+
+- `text` (string, required)
+  - The message text content
+
+#### Example Usage
+
+```python
+ephemeral = {
+    "channel": "team-channel",
+    "user": "U0123456789",
+    "text": "Only you can see this reminder about the meeting tomorrow."
+}
+```
+
+### slack-reply_in_thread
+
+Replies to a message in a thread.
+
+#### Parameters
+
+- `channel` (string, required)
+  - The channel containing the parent message
+
+- `thread_ts` (string, required)
+  - The timestamp of the parent message to reply to
+
+- `text` (string, required)
+  - The reply text content
+
+- `broadcast` (boolean, optional)
+  - Whether to also broadcast the reply to the channel
+  - Default: false
+
+#### Example Usage
+
+```python
+reply = {
+    "channel": "project-updates",
+    "thread_ts": "1234567890.123456",
+    "text": "Thanks for the update. I'll review the changes.",
+    "broadcast": False
+}
+```
+
+### slack-create_channel
 
 Creates a new Slack channel.
 
@@ -92,6 +184,10 @@ Creates a new Slack channel.
   - Default: false
   - Private channels can't be made public later
 
+#### Returns
+
+- The ID of the created channel if successful, None otherwise
+
 #### Example Usage
 
 ```python
@@ -108,7 +204,7 @@ create_private = {
 }
 ```
 
-### Slack-invite to channel
+### slack-invite_to_channel
 
 Invites a user to a Slack channel.
 
@@ -116,6 +212,7 @@ Invites a user to a Slack channel.
 
 - `channel` (string, required)
   - The channel ID or name to invite the user to
+  - If name is provided, the '#' symbol will be added if not present
   - Can be public or private channel
   - Bot must be a member of private channels
 
@@ -141,9 +238,9 @@ invite = {
    - Use private channels for sensitive information
 
 2. **Message Formatting**
-   - Use Block Kit for rich formatting
+   - Use the `generate_slack_blocks` tool for rich formatting
    - Keep messages concise and clear
-   - Use appropriate message types
+   - Use appropriate block types for different content
 
 3. **Error Handling**
    - Handle channel not found errors
@@ -171,6 +268,11 @@ invite = {
    - Invite team members
    - Manage channel access
    - Coordinate teams
+
+4. **Targeted Communication**
+   - Thread replies for focused discussions
+   - Ephemeral messages for private notifications
+   - Formatted blocks for complex information
 
 ## Security considerations
 
