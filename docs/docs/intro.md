@@ -5,7 +5,7 @@ slug: /
 
 # Meet Tyler
 
-### A framework for manifesting AI agents with a complete lack of conventional limitations.
+### A development kit for manifesting AI agents with a complete lack of conventional limitations.
 
 
 Tyler makes it easy to start building effective AI agents in just a few lines of code. Tyler provides all the essential components needed to build production-ready AI agents that can understand context, manage conversations, and effectively use tools.
