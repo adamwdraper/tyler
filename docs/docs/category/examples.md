@@ -1,6 +1,6 @@
 # Examples
 
-This section contains various examples of how to use Tyler in different scenarios. Each example demonstrates specific features and use cases of the framework.
+This section contains various examples of how to use Tyler in different scenarios. Each example demonstrates specific features and use cases of the development kit.
 
 ## Available Examples
 

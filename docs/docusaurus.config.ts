@@ -6,7 +6,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'Tyler',
-  tagline: 'A framework for manifesting AI agents with a complete lack of conventional limitations',
+  tagline: 'A development kit for manifesting AI agents with a complete lack of conventional limitations',
   favicon: 'img/tyler-soap.png',
 
   // Set the production url of your site here

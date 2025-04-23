@@ -1,6 +1,6 @@
 # API Reference
 
-This section provides detailed documentation for Tyler's core APIs. Here you'll find comprehensive information about the main classes and interfaces that make up the framework.
+This section provides detailed documentation for Tyler's core APIs. Here you'll find comprehensive information about the main classes and interfaces that make up the development kit.
 
 ## Core APIs
 

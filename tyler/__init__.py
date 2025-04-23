@@ -1,4 +1,4 @@
-"""Tyler - A framework for AI agents with a complete lack of conventional limitations"""
+"""Tyler - A development kit for AI agents with a complete lack of conventional limitations"""
 
 __version__ = "0.11.3"
 
