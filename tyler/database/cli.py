@@ -197,5 +197,23 @@ def current():
         click.echo(f"Error showing current version: {str(e)}", err=True)
         raise click.Abort()
 
+@cli.command()
+@click.argument('revision', required=True)
+def stamp(revision):
+    """Set the revision in the database without running migrations.
+    
+    This is useful when you have already manually applied schema changes or
+    when you need to mark a migration as complete without running it.
+    
+    REVISION can be a specific revision ID or 'head' for the latest revision.
+    """
+    try:
+        alembic_cfg = get_alembic_config()
+        command.stamp(alembic_cfg, revision)
+        click.echo(f"Database stamped at revision: {revision}")
+    except Exception as e:
+        click.echo(f"Error stamping database: {str(e)}", err=True)
+        raise click.Abort()
+
 def main():
     cli() 
