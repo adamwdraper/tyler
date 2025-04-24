@@ -526,4 +526,52 @@ def test_thread_with_weave_metrics():
     
     thread.add_message(message)
     assert thread.messages[0].metrics["weave_call"]["id"] == "call-123"
-    assert thread.messages[0].metrics["weave_call"]["ui_url"] == "https://weave.ui/call-123" 
+    assert thread.messages[0].metrics["weave_call"]["ui_url"] == "https://weave.ui/call-123"
+
+def test_thread_reactions():
+    """Test thread reaction functionality"""
+    thread = Thread(id="test-thread")
+    
+    # Add some messages to the thread
+    msg1 = Message(role="user", content="Hello")
+    msg2 = Message(role="assistant", content="Hi there!")
+    msg3 = Message(role="user", content="Can you help me?")
+    
+    thread.add_message(msg1)
+    thread.add_message(msg2)
+    thread.add_message(msg3)
+    
+    # Verify get_message_by_id works correctly
+    assert thread.get_message_by_id(msg1.id) == msg1
+    assert thread.get_message_by_id(msg2.id) == msg2
+    assert thread.get_message_by_id(msg3.id) == msg3
+    assert thread.get_message_by_id("nonexistent-id") is None
+    
+    # Add reactions to messages
+    assert thread.add_reaction(msg1.id, ":thumbsup:", "user1") == True
+    assert thread.add_reaction(msg2.id, ":heart:", "user1") == True
+    assert thread.add_reaction(msg2.id, ":heart:", "user2") == True
+    
+    # Verify reactions were added correctly
+    assert len(msg1.reactions) == 1
+    assert len(msg2.reactions) == 1
+    assert len(msg3.reactions) == 0
+    
+    assert msg1.reactions[":thumbsup:"] == ["user1"]
+    assert msg2.reactions[":heart:"] == ["user1", "user2"]
+    
+    # Get reactions through thread method
+    assert thread.get_reactions(msg1.id) == {":thumbsup:": ["user1"]}
+    assert thread.get_reactions(msg2.id) == {":heart:": ["user1", "user2"]}
+    assert thread.get_reactions(msg3.id) == {}
+    assert thread.get_reactions("nonexistent-id") == {}
+    
+    # Remove reactions
+    assert thread.remove_reaction(msg2.id, ":heart:", "user1") == True
+    assert thread.remove_reaction(msg2.id, ":heart:", "nonexistent-user") == False
+    assert thread.remove_reaction("nonexistent-id", ":thumbsup:", "user1") == False
+    
+    # Verify reaction removed
+    assert len(msg2.reactions[":heart:"]) == 1
+    assert "user1" not in msg2.reactions[":heart:"]
+    assert "user2" in msg2.reactions[":heart:"] 

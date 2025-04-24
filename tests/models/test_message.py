@@ -844,3 +844,75 @@ async def test_ensure_attachments_stored_with_existing_processed_content():
         assert message.attachments[0].attributes["overview"] == "A test file"
         assert "url" in message.attachments[0].attributes
         assert message.attachments[0].attributes["url"] == "/files//path/to/stored/file.txt"
+
+def test_message_reactions():
+    """Test message reactions functionality"""
+    # Create a message
+    message = Message(
+        role="assistant",
+        content="This is a great answer!"
+    )
+    
+    # Check initial state
+    assert message.reactions == {}
+    assert message.get_reactions() == {}
+    assert message.get_reaction_counts() == {}
+    
+    # Add reactions
+    assert message.add_reaction(":thumbsup:", "user1") == True
+    assert message.add_reaction(":thumbsup:", "user2") == True
+    assert message.add_reaction(":heart:", "user1") == True
+    
+    # Check reactions state
+    assert len(message.reactions) == 2
+    assert len(message.reactions[":thumbsup:"]) == 2
+    assert len(message.reactions[":heart:"]) == 1
+    assert "user1" in message.reactions[":thumbsup:"]
+    assert "user2" in message.reactions[":thumbsup:"]
+    assert "user1" in message.reactions[":heart:"]
+    
+    # Check reaction methods
+    assert message.get_reactions() == {
+        ":thumbsup:": ["user1", "user2"],
+        ":heart:": ["user1"]
+    }
+    
+    assert message.get_reaction_counts() == {
+        ":thumbsup:": 2,
+        ":heart:": 1
+    }
+    
+    # Test duplicate reaction (should return False)
+    assert message.add_reaction(":thumbsup:", "user1") == False
+    assert len(message.reactions[":thumbsup:"]) == 2  # Count should not change
+    
+    # Test reaction removal
+    assert message.remove_reaction(":heart:", "user1") == True
+    assert ":heart:" not in message.reactions  # Empty reactions should be removed
+    assert message.get_reaction_counts() == {":thumbsup:": 2}
+    
+    # Test removing non-existent reaction
+    assert message.remove_reaction(":heart:", "user1") == False
+    assert message.remove_reaction(":thumbsup:", "user3") == False
+
+def test_message_serialization_with_reactions(sample_message):
+    """Test serialization of messages with reactions"""
+    # Add reactions to the message
+    sample_message.add_reaction(":thumbsup:", "user1")
+    sample_message.add_reaction(":thumbsup:", "user2")
+    sample_message.add_reaction(":heart:", "user1")
+    
+    # Test serialization
+    data = sample_message.model_dump()
+    assert "reactions" in data
+    assert len(data["reactions"]) == 2
+    assert data["reactions"][":thumbsup:"] == ["user1", "user2"]
+    assert data["reactions"][":heart:"] == ["user1"]
+    
+    # Convert timestamp back to datetime for validation
+    data["timestamp"] = datetime.fromisoformat(data["timestamp"])
+    
+    # Test deserialization
+    new_message = Message.model_validate(data)
+    assert new_message.reactions == sample_message.reactions
+    assert new_message.get_reaction_counts() == {":thumbsup:": 2, ":heart:": 1}

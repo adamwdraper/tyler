@@ -67,6 +67,7 @@ Repository = "https://github.com/adamwdraper/tyler"
 "Bug Tracker" = "https://github.com/adamwdraper/tyler/issues"
 
 [project.scripts]
+tyler = "tyler.cli.main:main"
 tyler-db = "tyler.database.cli:main"
 tyler-chat = "tyler.cli.chat:main"
 

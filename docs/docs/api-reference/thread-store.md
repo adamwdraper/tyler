@@ -351,4 +351,133 @@ print(len(system_messages))  # 0
 
 - [Thread API](./thread.md)
 - [Message API](./message.md)
-- [Agent API](./agent.md) 
+- [Agent API](./agent.md)
+
+## Storing Threads with Reactions
+
+When threads with reactions are stored, all reaction data is automatically saved as part of the thread's state. This includes:
+
+1. Which users have reacted to which messages
+2. The specific emoji reactions used
+3. The association between message IDs and their reactions
+
+### Reaction Persistence
+
+Reactions are stored as part of the thread's metadata and are automatically handled during save and load operations:
+
+```python
+# Create a thread and add reactions
+thread = Thread()
+thread.add_message("Hello, world!", "user1")
+message_id = thread.messages[0].id
+thread.add_reaction(message_id, ":heart:", "user2")
+thread.add_reaction(message_id, ":thumbsup:", "user3")
+
+# Save the thread with reactions
+thread_store = InMemoryThreadStore()
+thread_id = thread_store.save_thread(thread)
+
+# Later, retrieve the thread with all reactions intact
+loaded_thread = thread_store.get_thread(thread_id)
+
+# The reactions are still available
+reactions = loaded_thread.get_reactions(message_id)
+print(reactions)  # Output: {":heart:": ["user2"], ":thumbsup:": ["user3"]}
+```
+
+### Reaction Storage Format
+
+When implementing a custom ThreadStore, be aware that reactions are stored in the following format within the thread's data structure:
+
+```json
+{
+  "messages": [...],
+  "reactions": {
+    "message_id_1": {
+      ":emoji1:": ["user_id1", "user_id2"],
+      ":emoji2:": ["user_id3"]
+    },
+    "message_id_2": {
+      ":emoji3:": ["user_id1"]
+    }
+  }
+}
+```
+
+Custom storage implementations should preserve this structure to ensure reactions are correctly maintained.
+
+## Database Schema
+
+The ThreadStore uses the following tables internally:
+
+- `threads`: Stores thread metadata (id, title, created_at, updated_at, attributes, source)
+- `messages`: Stores message data (id, thread_id, role, content, sequence, created_at, updated_at, token_count, attributes)
+- `message_files`: Stores file attachment metadata for messages
+- `message_reactions`: Stores user reactions to messages (message_id, emoji, user_id)
+
+## Best Practices
+
+1. **Connection Management**
+   ```python
+   # The ThreadStore manages its own connection pool
+   thread_store = ThreadStore("threads.db")
+   
+   # No need to manually close connections
+   # The store handles connection lifecycle
+   ```
+
+2. **Batch Operations**
+   ```python
+   # Save multiple threads
+   for thread in threads:
+       await thread_store.save(thread)
+   
+   # Delete multiple threads
+   for thread_id in thread_ids:
+       await thread_store.delete(thread_id)
+   ```
+
+3. **Efficient Queries**
+   ```python
+   # Use list_threads for pagination
+   first_page, total = await thread_store.list_threads(limit=10)
+   second_page, _ = await thread_store.list_threads(offset=10, limit=10)
+   
+   # Use search_threads for full-text search
+   results, _ = await thread_store.search_threads("important")
+   ```
+
+4. **Working with Sources**
+   ```python
+   # Create a thread with source information
+   thread = Thread(
+       source={
+           "name": "slack",
+           "channel": "C123",
+           "thread_ts": "1234567890.123"
+       }
+   )
+   await thread_store.save(thread)
+   
+   # Later, find the thread by source
+   thread = await thread_store.get_by_source("slack", "1234567890.123")
+   ```
+
+5. **Working with Reactions**
+   ```python
+   # Load a thread
+   thread = await thread_store.get(thread_id)
+   
+   # Add reactions to a message
+   message_id = thread.messages[0].id
+   thread.add_reaction(message_id, ":thumbsup:", "user1")
+   
+   # Save changes
+   await thread_store.save(thread)
+   ```
+
+## See Also
+
+- [Thread API](./thread.md)
+- [Message API](./message.md)
+- [Storage Concepts](../core-concepts.md#storage) 

@@ -702,4 +702,73 @@ async def test_system_prompt_preserved_in_memory():
     
     # But the original thread object should still have its system message
     assert has_system_message, "Original thread should have system message"
-    assert any(msg.role == "system" for msg in thread.messages), "Original thread should still have system message after save" 
+    assert any(msg.role == "system" for msg in thread.messages), "Original thread should still have system message after save"
+
+@pytest.mark.asyncio
+async def test_reaction_persistence():
+    """Test that message reactions are correctly saved and loaded"""
+    # Create an in-memory thread store for testing
+    thread_store = await ThreadStore.create()
+    
+    # Create a thread with messages
+    thread = Thread(id="test-reaction-thread", title="Reaction Test")
+    
+    # Add messages
+    msg1 = Message(role="user", content="Hello")
+    msg2 = Message(role="assistant", content="Hi there!")
+    
+    thread.add_message(msg1)
+    thread.add_message(msg2)
+    
+    # Add reactions to messages
+    thread.add_reaction(msg1.id, ":thumbsup:", "user1")
+    thread.add_reaction(msg1.id, ":thumbsup:", "user2")
+    thread.add_reaction(msg1.id, ":heart:", "user1")
+    thread.add_reaction(msg2.id, ":rocket:", "user3")
+    
+    # Save thread to storage
+    await thread_store.save(thread)
+    
+    # Retrieve thread from storage
+    retrieved_thread = await thread_store.get("test-reaction-thread")
+    
+    # Verify thread was retrieved
+    assert retrieved_thread is not None
+    assert retrieved_thread.id == "test-reaction-thread"
+    assert len(retrieved_thread.messages) == 2
+    
+    # Find the retrieved messages by comparing content
+    retrieved_msg1 = next((m for m in retrieved_thread.messages if m.content == "Hello"), None)
+    retrieved_msg2 = next((m for m in retrieved_thread.messages if m.content == "Hi there!"), None)
+    
+    assert retrieved_msg1 is not None
+    assert retrieved_msg2 is not None
+    
+    # Verify reactions were saved and loaded correctly
+    assert len(retrieved_msg1.reactions) == 2
+    assert len(retrieved_msg1.reactions[":thumbsup:"]) == 2
+    assert len(retrieved_msg1.reactions[":heart:"]) == 1
+    assert "user1" in retrieved_msg1.reactions[":thumbsup:"]
+    assert "user2" in retrieved_msg1.reactions[":thumbsup:"]
+    assert "user1" in retrieved_msg1.reactions[":heart:"]
+    
+    assert len(retrieved_msg2.reactions) == 1
+    assert len(retrieved_msg2.reactions[":rocket:"]) == 1
+    assert "user3" in retrieved_msg2.reactions[":rocket:"]
+    
+    # Test modifying reactions on the retrieved thread
+    retrieved_thread.add_reaction(retrieved_msg1.id, ":smile:", "user4")
+    retrieved_thread.remove_reaction(retrieved_msg1.id, ":heart:", "user1")
+    
+    # Save the modified thread
+    await thread_store.save(retrieved_thread)
+    
+    # Retrieve again and verify changes
+    modified_thread = await thread_store.get("test-reaction-thread")
+    modified_msg1 = next((m for m in modified_thread.messages if m.content == "Hello"), None)
+    
+    assert modified_msg1 is not None
+    assert len(modified_msg1.reactions) == 2  # Still 2 reaction types (thumbsup and smile, heart removed)
+    assert ":heart:" not in modified_msg1.reactions
+    assert ":smile:" in modified_msg1.reactions
+    assert "user4" in modified_msg1.reactions[":smile:"] 

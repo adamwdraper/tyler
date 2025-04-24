@@ -52,6 +52,10 @@ class Message(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: Optional[MessageSource] = None  # Enhanced attribution for message sources
     attachments: List[Attachment] = Field(default_factory=list)
+    reactions: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="Map of emoji to list of user IDs who reacted with that emoji"
+    )
     
     # Simple metrics structure
     metrics: Dict[str, Any] = Field(
@@ -221,7 +225,8 @@ class Message(BaseModel):
             "content": self.content,
             "timestamp": self.timestamp.isoformat() if mode == "json" else self.timestamp,
             "source": self.source,
-            "metrics": self.metrics
+            "metrics": self.metrics,
+            "reactions": self.reactions
         }
         
         if self.name:
@@ -344,6 +349,62 @@ class Message(BaseModel):
         else:
             raise ValueError("attachment must be either Attachment object or bytes")
 
+    def add_reaction(self, emoji: str, user_id: str) -> bool:
+        """Add a reaction to a message.
+        
+        Args:
+            emoji: Emoji shortcode (e.g., ":thumbsup:")
+            user_id: ID of the user adding the reaction
+            
+        Returns:
+            True if reaction was added, False if it already existed
+        """
+        if emoji not in self.reactions:
+            self.reactions[emoji] = []
+        
+        if user_id in self.reactions[emoji]:
+            return False
+        
+        self.reactions[emoji].append(user_id)
+        return True
+
+    def remove_reaction(self, emoji: str, user_id: str) -> bool:
+        """Remove a reaction from a message.
+        
+        Args:
+            emoji: Emoji shortcode (e.g., ":thumbsup:")
+            user_id: ID of the user removing the reaction
+            
+        Returns:
+            True if reaction was removed, False if it didn't exist
+        """
+        if emoji not in self.reactions or user_id not in self.reactions[emoji]:
+            return False
+        
+        self.reactions[emoji].remove(user_id)
+        
+        # Clean up empty reactions
+        if not self.reactions[emoji]:
+            del self.reactions[emoji]
+            
+        return True
+
+    def get_reactions(self) -> Dict[str, List[str]]:
+        """Get all reactions for this message.
+        
+        Returns:
+            Dictionary mapping emoji to list of user IDs
+        """
+        return self.reactions
+
+    def get_reaction_counts(self) -> Dict[str, int]:
+        """Get counts of reactions for this message.
+        
+        Returns:
+            Dictionary mapping emoji to count of reactions
+        """
+        return {emoji: len(users) for emoji, users in self.reactions.items()}
+
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -423,6 +484,10 @@ class Message(BaseModel):
                             "id": "call-123",
                             "ui_url": "https://weave.ui/call-123"
                         }
+                    },
+                    "reactions": {
+                        ":thumbsup:": ["U123456", "U234567"],
+                        ":heart:": ["U123456"]
                     }
                 }
             ]

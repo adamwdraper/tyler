@@ -34,5 +34,6 @@ class MessageRecord(Base):
     source = Column(JSON, nullable=True)
     attachments = Column(JSON, nullable=True)
     metrics = Column(JSON, nullable=False)
+    reactions = Column(JSON, nullable=True)
     
     thread = relationship("ThreadRecord", back_populates="messages") 

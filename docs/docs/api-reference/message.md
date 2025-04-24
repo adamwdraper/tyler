@@ -88,6 +88,7 @@ message = Message(
 | `source` | Optional[MessageSource] | No | None | Source information (see MessageSource structure) |
 | `attachments` | List[Attachment] | No | [] | File attachments |
 | `metrics` | Dict[str, Any] | No | Default metrics | Message metrics and analytics |
+| `reactions` | Dict[str, List[str]] | No | {} | Map of emoji to list of user IDs who reacted |
 
 ### Source Structure
 
@@ -146,6 +147,16 @@ class TextContent(TypedDict):
 }
 ```
 
+### Reactions Structure
+
+```python
+{
+    ":thumbsup:": ["user1", "user2"],  # Emoji shortcode -> list of user IDs
+    ":heart:": ["user1"],
+    ":rocket:": ["user3"]
+}
+```
+
 ## Methods
 
 ### model_dump
@@ -175,7 +186,8 @@ Returns a complete dictionary representation including:
     "source": Optional[Dict],
     "metrics": Dict,
     "attributes": Dict,
-    "attachments": Optional[List[Dict]]  # Serialized attachments
+    "attachments": Optional[List[Dict]],  # Serialized attachments
+    "reactions": Dict[str, List[str]]     # Map of emoji to user IDs
 }
 ```
 
@@ -249,6 +261,104 @@ message.add_attachment(pdf_bytes, filename="document.pdf")
 # Add using Attachment object
 attachment = Attachment(filename="data.json", content=json_bytes)
 message.add_attachment(attachment)
+```
+
+### add_reaction
+
+Add a reaction to a message.
+
+```python
+def add_reaction(
+    self,
+    emoji: str,
+    user_id: str
+) -> bool
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `emoji` | str | Yes | None | Emoji shortcode (e.g., ":thumbsup:") |
+| `user_id` | str | Yes | None | ID of the user adding the reaction |
+
+#### Returns
+
+`True` if reaction was added, `False` if it already existed.
+
+#### Example
+
+```python
+# Add a thumbs up reaction from user1
+message.add_reaction(":thumbsup:", "user123")
+```
+
+### remove_reaction
+
+Remove a reaction from a message.
+
+```python
+def remove_reaction(
+    self,
+    emoji: str,
+    user_id: str
+) -> bool
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `emoji` | str | Yes | None | Emoji shortcode (e.g., ":thumbsup:") |
+| `user_id` | str | Yes | None | ID of the user removing the reaction |
+
+#### Returns
+
+`True` if reaction was removed, `False` if it didn't exist.
+
+#### Example
+
+```python
+# Remove a heart reaction from user1
+message.remove_reaction(":heart:", "user123")
+```
+
+### get_reactions
+
+Get all reactions for this message.
+
+```python
+def get_reactions(self) -> Dict[str, List[str]]
+```
+
+#### Returns
+
+Dictionary mapping emoji to list of user IDs who reacted with that emoji.
+
+#### Example
+
+```python
+reactions = message.get_reactions()
+# Example result: {":thumbsup:": ["user123", "user789"], ":heart:": ["user456"]}
+```
+
+### get_reaction_counts
+
+Get counts of reactions for this message.
+
+```python
+def get_reaction_counts(self) -> Dict[str, int]
+```
+
+#### Returns
+
+Dictionary mapping emoji to count of reactions.
+
+#### Example
+
+```python
+counts = message.get_reaction_counts()
+# Example result: {":thumbsup:": 2, ":heart:": 1}
 ```
 
 ### _serialize_tool_calls
@@ -332,6 +442,50 @@ chat_message = message.to_chat_completion_message()
 The URL is retrieved from:
 1. `attachment.attributes["url"]` if available
 2. Constructed from `attachment.storage_path` if not
+
+## Working with Reactions
+
+The `Message` class supports Slack-like emoji reactions, allowing multiple users to react to a message.
+
+### Adding and Removing Reactions
+
+```python
+# Add a reaction (returns True if added, False if already existed)
+message.add_reaction(":thumbsup:", "user123")
+message.add_reaction(":heart:", "user456")
+message.add_reaction(":thumbsup:", "user789")  # Multiple users can use same emoji
+
+# Remove a reaction (returns True if removed, False if not found)
+message.remove_reaction(":heart:", "user456")
+```
+
+### Getting Reactions and Counts
+
+```python
+# Get all reactions (emoji -> list of user IDs)
+reactions = message.get_reactions()
+# Example: {":thumbsup:": ["user123", "user789"], ":heart:": ["user456"]}
+
+# Get reaction counts (emoji -> count)
+counts = message.get_reaction_counts()
+# Example: {":thumbsup:": 2, ":heart:": 1}
+
+# Check if a specific user reacted with an emoji
+has_reaction = "user123" in message.reactions.get(":thumbsup:", [])
+```
+
+### Reactions and Serialization
+
+Reactions are automatically included in serialized messages:
+
+```python
+# Serialize message including reactions
+data = message.model_dump()
+# data["reactions"] will contain {":thumbsup:": ["user123", "user789"], ...}
+
+# Deserialize message with reactions
+new_message = Message.model_validate(data)
+```
 
 ## Field Validators
 
@@ -491,6 +645,82 @@ Ensures the source field has the correct structure with valid entity type if pre
    # When converting a message to chat completion format:
    chat_message = message.to_chat_completion_message(file_store)
    ```
+
+7. **Using Reactions**
+   ```python
+   # Add reactions from users
+   message.add_reaction(":thumbsup:", "user123")
+   message.add_reaction(":thumbsup:", "user456")  # Multiple users can use same emoji
+   message.add_reaction(":heart:", "user123")     # Users can add multiple reactions
+   
+   # Get reaction counts for display
+   counts = message.get_reaction_counts()
+   if ":thumbsup:" in counts:
+       print(f"👍 {counts[':thumbsup:']}")  # Display: 👍 2
+   
+   # Remove a reaction
+   message.remove_reaction(":thumbsup:", "user123")
+   ```
+
+## Reactions
+
+Messages in a thread can receive emoji reactions from users. These reactions are stored as part of the message's metadata and provide a way for users to express sentiment without creating new messages.
+
+### Reaction Structure
+
+Reactions to a message are stored in a dictionary format where:
+- Keys are emoji strings (e.g., `:heart:`, `:thumbsup:`)
+- Values are lists of user IDs who reacted with that emoji
+
+Example of the internal reaction structure:
+
+```python
+message.reactions = {
+    ":heart:": ["user123", "user456"],
+    ":thumbsup:": ["user789", "user123"]
+}
+```
+
+### Accessing Reactions
+
+While reactions are stored within the message object, they are typically managed through the Thread API, which provides methods for adding, removing, and querying reactions:
+
+```python
+# Add a reaction to this message
+thread.add_reaction(message.id, ":heart:", "user123")
+
+# Get all reactions for this message
+reactions = thread.get_reactions(message.id)
+
+# Remove a reaction
+thread.remove_reaction(message.id, ":heart:", "user123")
+```
+
+### Displaying Reactions
+
+When rendering messages in a UI, you can access the message's reactions to display them:
+
+```python
+# Get a message from a thread
+message = thread.messages[0]
+
+# Access reactions
+if hasattr(message, 'reactions') and message.reactions:
+    for emoji, users in message.reactions.items():
+        print(f"{emoji}: {len(users)} reactions")
+```
+
+### Reaction Events
+
+When reactions are added or removed, the message object itself doesn't emit events. Instead, listen for reaction events at the thread level:
+
+```python
+# Example of listening for reaction events on a thread
+def on_reaction_added(message_id, emoji, user_id):
+    print(f"User {user_id} reacted with {emoji} to message {message_id}")
+
+thread.on("reaction_added", on_reaction_added)
+```
 
 ## See Also
 

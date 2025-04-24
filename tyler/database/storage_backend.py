@@ -234,7 +234,8 @@ class SQLBackend(StorageBackend):
             attributes=msg_record.attributes,
             timestamp=msg_record.timestamp,
             source=msg_record.source,
-            metrics=msg_record.metrics
+            metrics=msg_record.metrics,
+            reactions=msg_record.reactions or {}
         )
         if msg_record.attachments:
             message.attachments = [Attachment(**a) for a in msg_record.attachments]
@@ -274,7 +275,8 @@ class SQLBackend(StorageBackend):
             timestamp=message.timestamp,
             source=message.source,
             attachments=[a.model_dump() for a in message.attachments] if message.attachments else None,
-            metrics=message.metrics
+            metrics=message.metrics,
+            reactions=message.reactions
         )
     
     async def _get_session(self) -> AsyncSession:
