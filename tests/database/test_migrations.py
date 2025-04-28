@@ -77,7 +77,7 @@ async def test_initial_migration(temp_db, alembic_config):
         assert 'id' in columns
         assert 'title' in columns
         assert 'attributes' in columns
-        assert 'source' in columns
+        assert 'platforms' in columns
         assert 'metrics' in columns
         assert 'created_at' in columns
         assert 'updated_at' in columns
@@ -106,7 +106,12 @@ async def test_migration_with_data(temp_db, alembic_config):
     thread = Thread()
     thread.title = "Test Thread"
     thread.attributes = {"category": "test", "priority": "high"}
-    thread.source = {"name": "test", "id": "123"}
+    thread.platforms = {
+        "slack": {
+            "channel": "C123",
+            "thread_ts": "1234567890.123"
+        }
+    }
     
     # Add messages
     thread.add_message(Message(role="user", content="Test message"))
@@ -144,7 +149,7 @@ async def test_migration_with_data(temp_db, alembic_config):
             # Restore threads first
             for row in thread_data:
                 conn.execute(
-                    text("INSERT INTO threads (id, title, attributes, source, metrics, created_at, updated_at) VALUES (:id, :title, :attributes, :source, :metrics, :created_at, :updated_at)"),
+                    text("INSERT INTO threads (id, title, attributes, platforms, metrics, created_at, updated_at) VALUES (:id, :title, :attributes, :platforms, :metrics, :created_at, :updated_at)"),
                     row
                 )
             
@@ -162,7 +167,7 @@ async def test_migration_with_data(temp_db, alembic_config):
     assert loaded_thread is not None
     assert loaded_thread.title == thread.title
     assert loaded_thread.attributes == thread.attributes
-    assert loaded_thread.source == thread.source
+    assert loaded_thread.platforms == thread.platforms
     assert len(loaded_thread.messages) == len(thread.messages)
     
     # Verify message content
