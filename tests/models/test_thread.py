@@ -14,20 +14,10 @@ def sample_thread():
         id="test-thread",
         title="Test Thread",
         attributes={"category": "test"},
-        source={
-            "entity": {
-                "id": "U123456",
-                "name": "Test User",
-                "type": "user",
-                "attributes": {
-                    "user_id": "U123456"
-                }
-            },
-            "platform": {
-                "name": "slack",
-                "attributes": {
-                    "channel": "general"
-                }
+        platforms={
+            "slack": {
+                "channel": "C123",
+                "thread_ts": "1234567890.123"
             }
         }
     )
@@ -47,7 +37,7 @@ def test_create_thread():
     assert thread.updated_at.tzinfo == UTC
     assert thread.messages == []
     assert thread.attributes == {}
-    assert thread.source is None
+    assert thread.platforms == {}
 
 def test_add_message():
     """Test adding a message to a thread"""
@@ -66,9 +56,8 @@ def test_thread_serialization(sample_thread):
     assert data["id"] == "test-thread"
     assert data["title"] == "Test Thread"
     assert data["attributes"] == {"category": "test"}
-    assert data["source"]["entity"]["id"] == "U123456"
-    assert data["source"]["platform"]["name"] == "slack"
-    assert data["source"]["platform"]["attributes"]["channel"] == "general"
+    assert data["platforms"]["slack"]["channel"] == "C123"
+    assert data["platforms"]["slack"]["thread_ts"] == "1234567890.123"
     assert len(data["messages"]) == 3
     assert data["messages"][0]["role"] == "system"
     assert data["messages"][1]["role"] == "user"
@@ -86,7 +75,7 @@ def test_thread_serialization(sample_thread):
     assert new_thread.id == sample_thread.id
     assert new_thread.title == sample_thread.title
     assert new_thread.attributes == sample_thread.attributes
-    assert new_thread.source == sample_thread.source
+    assert new_thread.platforms == sample_thread.platforms
     assert len(new_thread.messages) == len(sample_thread.messages)
     for orig_msg, new_msg in zip(sample_thread.messages, new_thread.messages):
         assert new_msg.role == orig_msg.role

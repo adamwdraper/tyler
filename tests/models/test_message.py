@@ -416,21 +416,12 @@ def test_message_with_tool_calls():
 def test_message_with_source():
     """Test message with source information"""
     source = {
-        "entity": {
-            "id": "U123456",
-            "name": "John Doe",
-            "type": "user",
-            "attributes": {
-                "email": "john.doe@example.com",
-                "user_id": "U123456"
-            }
-        },
-        "platform": {
-            "name": "slack",
-            "attributes": {
-                "channel": "general",
-                "thread_ts": "1234567890.123456"
-            }
+        "id": "U123456",
+        "name": "John Doe",
+        "type": "user",
+        "attributes": {
+            "email": "john.doe@example.com",
+            "user_id": "U123456"
         }
     }
     
@@ -441,10 +432,10 @@ def test_message_with_source():
     )
     
     assert message.source == source
-    assert message.source["entity"]["type"] == "user"
-    assert message.source["entity"]["id"] == "U123456"
-    assert message.source["platform"]["name"] == "slack"
-    assert message.source["platform"]["attributes"]["channel"] == "general"
+    assert message.source["type"] == "user"
+    assert message.source["id"] == "U123456"
+    assert message.source["name"] == "John Doe"
+    assert message.source["attributes"]["email"] == "john.doe@example.com"
 
 def test_message_with_metrics():
     """Test message with metrics"""
