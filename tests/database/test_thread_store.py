@@ -223,19 +223,19 @@ async def test_find_by_attributes(thread_store):
     assert results[0].id == "thread-1"
 
 @pytest.mark.asyncio
-async def test_find_by_source(thread_store):
-    """Test finding threads by source"""
-    # Create threads with different sources
+async def test_find_by_platform(thread_store):
+    """Test finding threads by platform"""
+    # Create threads with different platforms
     thread1 = Thread(id="thread-1", title="Thread 1")
-    thread1.source = {"name": "slack", "channel": "general"}
+    thread1.platforms = {"slack": {"channel": "general"}}
     await thread_store.save(thread1)
     
     thread2 = Thread(id="thread-2", title="Thread 2")
-    thread2.source = {"name": "notion", "page_id": "123"}
+    thread2.platforms = {"notion": {"page_id": "123"}}
     await thread_store.save(thread2)
     
-    # Search by source using the ThreadStore API
-    results = await thread_store.find_by_source("slack", {})
+    # Search by platform using the ThreadStore API
+    results = await thread_store.find_by_platform("slack", {})
     
     assert len(results) == 1
     assert results[0].id == "thread-1"

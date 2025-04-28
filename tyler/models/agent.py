@@ -1201,8 +1201,7 @@ class Agent(Model):
     def _create_assistant_source(self, include_version: bool = True) -> Dict:
         """Creates a standardized source entity dict for assistant messages."""
         attributes = {
-            "model": self.model_name,
-            "purpose": self.purpose
+            "model": self.model_name
         }
         
         return {

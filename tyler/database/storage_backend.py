@@ -53,8 +53,8 @@ class StorageBackend(ABC):
         pass
     
     @abstractmethod
-    async def find_by_source(self, source_name: str, properties: Dict[str, Any]) -> List[Thread]:
-        """Find threads by source name and properties."""
+    async def find_by_platform(self, platform_name: str, properties: Dict[str, Any]) -> List[Thread]:
+        """Find threads by platform name and properties in the platforms structure."""
         pass
     
     @abstractmethod
@@ -107,14 +107,14 @@ class MemoryBackend(StorageBackend):
                 matching_threads.append(thread)
         return matching_threads
     
-    async def find_by_source(self, source_name: str, properties: Dict[str, Any]) -> List[Thread]:
+    async def find_by_platform(self, platform_name: str, properties: Dict[str, Any]) -> List[Thread]:
         matching_threads = []
         for thread in self._threads.values():
-            source = getattr(thread, 'source', {})
+            platforms = getattr(thread, 'platforms', {})
             if (
-                isinstance(source, dict) and 
-                source.get('name') == source_name and
-                all(source.get(k) == v for k, v in properties.items())
+                isinstance(platforms, dict) and
+                platform_name in platforms and
+                all(platforms[platform_name].get(k) == v for k, v in properties.items())
             ):
                 matching_threads.append(thread)
         return matching_threads
@@ -234,6 +234,7 @@ class SQLBackend(StorageBackend):
             attributes=msg_record.attributes,
             timestamp=msg_record.timestamp,
             source=msg_record.source,
+            platforms=msg_record.platforms or {},
             metrics=msg_record.metrics,
             reactions=msg_record.reactions or {}
         )
@@ -247,14 +248,14 @@ class SQLBackend(StorageBackend):
             id=record.id,
             title=record.title,
             attributes=record.attributes,
-            source=record.source,
+            platforms=record.platforms or {},
             created_at=record.created_at,
             updated_at=record.updated_at,
             messages=[]
         )
         # Sort messages: system messages first, then others by sequence
         sorted_messages = sorted(record.messages, 
-            key=lambda m: (0 if m.role == "system" else 1, m.sequence))
+            key=lambda m: (0 if m.role == "system" else 1, m.sequence or 0))
         for msg_record in sorted_messages:
             message = self._create_message_from_record(msg_record)
             thread.messages.append(message)
@@ -325,7 +326,7 @@ class SQLBackend(StorageBackend):
                     # Update existing thread
                     thread_record.title = thread.title
                     thread_record.attributes = thread.attributes
-                    thread_record.source = thread.source
+                    thread_record.platforms = thread.platforms
                     thread_record.updated_at = datetime.now(UTC)
                     thread_record.messages = []  # Clear existing messages
                 else:
@@ -334,7 +335,7 @@ class SQLBackend(StorageBackend):
                         id=thread.id,
                         title=thread.title,
                         attributes=thread.attributes,
-                        source=thread.source,
+                        platforms=thread.platforms,
                         created_at=thread.created_at,
                         updated_at=thread.updated_at,
                         messages=[]
@@ -455,31 +456,34 @@ class SQLBackend(StorageBackend):
         finally:
             await session.close()
 
-    async def find_by_source(self, source_name: str, properties: Dict[str, Any]) -> List[Thread]:
-        """Find threads by source name and properties."""
+    async def find_by_platform(self, platform_name: str, properties: Dict[str, Any]) -> List[Thread]:
+        """Find threads by platform name and properties in the platforms structure."""
         session = await self._get_session()
         try:
             query = select(ThreadRecord).options(selectinload(ThreadRecord.messages))
             
             if self.database_url.startswith('sqlite'):
-                # Use SQLite json_extract for source name
-                query = query.where(text("json_extract(source, '$.name') = :name").bindparams(name=source_name))
+                # Use SQLite json_extract for platform name
+                query = query.where(text(f"json_extract(platforms, '$.{platform_name}') IS NOT NULL"))
                 # Add property conditions
                 for key, value in properties.items():
-                    query = query.where(text(f"json_extract(source, '$.{key}') = :value_{key}").bindparams(**{f"value_{key}": str(value)}))
+                    query = query.where(
+                        text(f"json_extract(platforms, '$.{platform_name}.{key}') = :value_{key}")
+                        .bindparams(**{f"value_{key}": str(value)})
+                    )
             else:
-                # Use PostgreSQL JSONB operators via text() to ensure proper SQL generation
-                query = query.where(text("source->>'name' = :source_name").bindparams(source_name=source_name))
+                # Use PostgreSQL JSONB operators for platform checks
+                query = query.where(text(f"platforms ? '{platform_name}'"))
                 
                 # Add property conditions with text() for proper PostgreSQL JSONB syntax
                 for key, value in properties.items():
                     # Log the query parameters for debugging
-                    logger.info(f"Searching for source[{key}] = {value} (type: {type(value)})")
+                    logger.info(f"Searching for platforms[{platform_name}][{key}] = {value} (type: {type(value)})")
                     
                     # Handle different value types appropriately
                     if value is None:
                         # Check for null/None values
-                        query = query.where(text(f"source->>'{key}' IS NULL"))
+                        query = query.where(text(f"platforms->'{platform_name}'->'{key}' IS NULL"))
                     else:
                         # Convert value to string for text comparison
                         str_value = str(value)
@@ -488,20 +492,21 @@ class SQLBackend(StorageBackend):
                             str_value = str(value).lower()
                         
                         # Use PostgreSQL's JSONB operators for direct string comparison
-                        param_name = f"source_{key}"
+                        param_name = f"platform_{key}"
                         query = query.where(
-                            text(f"source->>'{key}' = :{param_name}").bindparams(**{param_name: str_value})
+                            text(f"platforms->'{platform_name}'->'{key}' = :{param_name}::jsonb")
+                            .bindparams(**{param_name: str_value})
                         )
             
             # Log the final query for debugging
-            logger.info(f"Executing find_by_source query: {query}")
+            logger.info(f"Executing find_by_platform query: {query}")
             
             result = await session.execute(query)
             threads = [self._create_thread_from_record(record) for record in result.scalars().all()]
             logger.info(f"Found {len(threads)} matching threads")
             return threads
         except Exception as e:
-            logger.error(f"Error in find_by_source: {str(e)}")
+            logger.error(f"Error in find_by_platform: {str(e)}")
             raise
         finally:
             await session.close()
@@ -600,4 +605,38 @@ class SQLBackend(StorageBackend):
             logger.error(f"Error in find_messages_by_attribute: {str(e)}")
             return False  # On error, assume no match
         finally:
-            await session.close() 
+            await session.close()
+
+        
+    async def get_thread_by_message_id(self, message_id: str) -> Optional[Thread]:
+        """
+        Find a thread containing a specific message ID.
+        
+        Args:
+            message_id: The ID of the message to find
+            
+        Returns:
+            The Thread containing the message, or None if not found
+        """
+        async with await self._get_session() as session:
+            # First find the message record
+            query = select(MessageRecord).where(MessageRecord.id == message_id)
+            result = await session.execute(query)
+            message_record = result.scalars().first()
+            
+            if not message_record:
+                return None
+                
+            # Get the thread ID from the message record
+            thread_id = message_record.thread_id
+            
+            # Get the complete thread
+            query = select(ThreadRecord).where(ThreadRecord.id == thread_id)
+            query = query.options(selectinload(ThreadRecord.messages))
+            result = await session.execute(query)
+            thread_record = result.scalars().first()
+            
+            if not thread_record:
+                return None
+                
+            return self._create_thread_from_record(thread_record) 

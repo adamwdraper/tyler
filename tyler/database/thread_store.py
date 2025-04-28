@@ -134,7 +134,7 @@ class ThreadStore:
             created_at=thread.created_at,
             updated_at=thread.updated_at,
             attributes=thread.attributes.copy() if thread.attributes else {},
-            source=thread.source.copy() if thread.source else None
+            platforms=thread.platforms.copy() if thread.platforms else {}
         )
         
         # Only copy non-system messages to the filtered thread
@@ -169,10 +169,10 @@ class ThreadStore:
         await self._ensure_initialized()
         return await self._backend.find_by_attributes(attributes)
     
-    async def find_by_source(self, source_name: str, properties: Dict[str, Any]) -> List[Thread]:
-        """Find threads by source name and properties."""
+    async def find_by_platform(self, platform_name: str, properties: Dict[str, Any]) -> List[Thread]:
+        """Find threads by platform name and properties."""
         await self._ensure_initialized()
-        return await self._backend.find_by_source(source_name, properties)
+        return await self._backend.find_by_platform(platform_name, properties)
     
     async def list_recent(self, limit: Optional[int] = None) -> List[Thread]:
         """List recent threads."""
@@ -230,6 +230,33 @@ class ThreadStore:
     @property
     def engine(self):
         return getattr(self._backend, "engine", None)
+
+    async def get_thread_by_message_id(self, message_id: str) -> Optional[Thread]:
+        """
+        Find a thread containing a specific message ID.
+        
+        Args:
+            message_id: The ID of the message to find
+            
+        Returns:
+            The Thread containing the message, or None if not found
+        """
+        await self._ensure_initialized()
+        
+        # Check if backend has native implementation
+        if hasattr(self._backend, 'get_thread_by_message_id'):
+            return await self._backend.get_thread_by_message_id(message_id)
+        
+        # Fallback implementation for backends that don't support this method
+        threads = await self._backend.list_recent(500)  # Get recent threads
+        
+        # Check each thread's messages for the message ID
+        for thread in threads:
+            for message in thread.messages:
+                if message.id == message_id:
+                    return thread
+        
+        return None
 
 # Optional PostgreSQL-specific implementation
 try:

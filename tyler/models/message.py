@@ -22,19 +22,11 @@ class TextContent(TypedDict):
     type: Literal["text"]
     text: str
 
-class PlatformSource(TypedDict, total=False):
-    name: str  # Name of the platform (slack, discord, etc.)
-    attributes: Optional[Dict[str, Any]]  # Platform-specific attributes
-
 class EntitySource(TypedDict, total=False):
     id: str  # Unique identifier for the entity
     name: str  # Human-readable name of the entity
     type: Literal["user", "agent", "tool"]  # Type of entity
     attributes: Optional[Dict[str, Any]]  # All other entity-specific attributes
-
-class MessageSource(TypedDict, total=False):
-    entity: Optional[EntitySource]  # Information about the entity that created the message
-    platform: Optional[PlatformSource]  # Information about the platform where the message was created
 
 class Message(BaseModel):
     """Represents a single message in a thread"""
@@ -50,7 +42,11 @@ class Message(BaseModel):
     tool_calls: Optional[list] = None  # For assistant messages
     attributes: Dict = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    source: Optional[MessageSource] = None  # Enhanced attribution for message sources
+    source: Optional[EntitySource] = None  # Creator information (who created this message)
+    platforms: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description="References to where this message exists on external platforms. Maps platform name to platform-specific identifiers."
+    )
     attachments: List[Attachment] = Field(default_factory=list)
     reactions: Dict[str, List[str]] = Field(
         default_factory=dict,
@@ -118,15 +114,14 @@ class Message(BaseModel):
     def validate_source(cls, v):
         """Validate source field structure"""
         if v is not None:
-            # Validate entity if present
-            if "entity" in v and v["entity"] is not None:
-                if "type" in v["entity"] and v["entity"]["type"] not in ["user", "agent", "tool"]:
-                    raise ValueError("entity.type must be one of: user, agent, tool")
+            # Check if type field is present and valid
+            if "type" in v and v["type"] not in ["user", "agent", "tool"]:
+                raise ValueError("source.type must be one of: user, agent, tool")
                 
-            # Validate platform if present
-            if "platform" in v and v["platform"] is not None:
-                if "name" not in v["platform"]:
-                    raise ValueError("platform.name is required when platform is present")
+            # Ensure ID is present
+            if "id" not in v:
+                raise ValueError("source.id is required when source is present")
+                
         return v
 
     def __init__(self, **data):
@@ -225,6 +220,7 @@ class Message(BaseModel):
             "content": self.content,
             "timestamp": self.timestamp.isoformat() if mode == "json" else self.timestamp,
             "source": self.source,
+            "platforms": self.platforms,
             "metrics": self.metrics,
             "reactions": self.reactions
         }

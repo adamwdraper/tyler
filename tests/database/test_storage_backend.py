@@ -61,15 +61,15 @@ async def test_memory_backend_find(sample_thread):
     assert len(found) == 1
     assert found[0].id == thread1.id
 
-    # Test find by source
-    thread1.source = {'name': 'slack', 'channel': 'general'}
-    thread2.source = {'name': 'notion'}
+    # Test find by platform
+    thread1.platforms = {'slack': {'channel': 'general'}}
+    thread2.platforms = {'notion': {}}
     await backend.save(thread1)
     await backend.save(thread2)
 
-    found_source = await backend.find_by_source('slack', {'channel': 'general'})
-    assert len(found_source) == 1
-    assert found_source[0].id == thread1.id
+    found_platform = await backend.find_by_platform('slack', {'channel': 'general'})
+    assert len(found_platform) == 1
+    assert found_platform[0].id == thread1.id
 
 
 @pytest.mark.asyncio
@@ -130,15 +130,15 @@ async def test_sql_backend_find(tmp_path):
     assert len(found) == 1
     assert found[0].id == 'sql-thread-1'
 
-    # Test find by source
-    thread1.source = {'name': 'github', 'repo': 'tyler'}
-    thread2.source = {'name': 'gitlab'}
+    # Test find by platform
+    thread1.platforms = {'github': {'repo': 'tyler'}}
+    thread2.platforms = {'gitlab': {}}
     await backend.save(thread1)
     await backend.save(thread2)
 
-    found_source = await backend.find_by_source('github', {'repo': 'tyler'})
-    assert len(found_source) == 1
-    assert found_source[0].id == 'sql-thread-1'
+    found_platform = await backend.find_by_platform('github', {'repo': 'tyler'})
+    assert len(found_platform) == 1
+    assert found_platform[0].id == 'sql-thread-1'
 
 
 @pytest.mark.asyncio

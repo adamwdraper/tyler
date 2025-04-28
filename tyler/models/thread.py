@@ -15,7 +15,10 @@ class Thread(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     attributes: Dict = Field(default_factory=dict)
-    source: Optional[Dict[str, Any]] = None  # {"name": "slack", "thread_id": "..."}
+    platforms: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description="References to where this thread exists on external platforms. Maps platform name to platform-specific identifiers."
+    )
     
     model_config = {
         "json_schema_extra": {
@@ -27,10 +30,11 @@ class Thread(BaseModel):
                     "created_at": "2024-02-07T00:00:00+00:00",
                     "updated_at": "2024-02-07T00:00:00+00:00",
                     "attributes": {},
-                    "source": {
-                        "name": "slack",
+                    "platforms": {
+                        "slack": {
                         "channel": "C123",
                         "thread_ts": "1234567890.123"
+                        }
                     }
                 }
             ]
@@ -59,7 +63,7 @@ class Thread(BaseModel):
             "created_at": self.created_at.isoformat() if mode == "json" else self.created_at,
             "updated_at": self.updated_at.isoformat() if mode == "json" else self.updated_at,
             "attributes": self.attributes,
-            "source": self.source
+            "platforms": self.platforms
         }
     
     def add_message(self, message: Message) -> None:

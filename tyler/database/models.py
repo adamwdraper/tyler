@@ -12,7 +12,7 @@ class ThreadRecord(Base):
     id = Column(String, primary_key=True)
     title = Column(String, nullable=True)
     attributes = Column(JSON, nullable=False, default={})
-    source = Column(JSON, nullable=True)
+    platforms = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
@@ -23,7 +23,7 @@ class MessageRecord(Base):
     
     id = Column(String, primary_key=True)
     thread_id = Column(String, ForeignKey('threads.id', ondelete='CASCADE'), nullable=False)
-    sequence = Column(Integer, nullable=False)  # Message order in thread
+    sequence = Column(Integer, nullable=False)
     role = Column(String, nullable=False)
     content = Column(Text, nullable=True)
     name = Column(String, nullable=True)
@@ -32,8 +32,9 @@ class MessageRecord(Base):
     attributes = Column(JSON, nullable=False, default={})
     timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     source = Column(JSON, nullable=True)
+    platforms = Column(JSON, nullable=True)
     attachments = Column(JSON, nullable=True)
-    metrics = Column(JSON, nullable=False)
+    metrics = Column(JSON, nullable=False, default={})
     reactions = Column(JSON, nullable=True)
     
     thread = relationship("ThreadRecord", back_populates="messages") 
