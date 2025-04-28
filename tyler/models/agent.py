@@ -364,14 +364,12 @@ class Agent(Model):
                 role='assistant', 
                 content=error_text,
                 source={
-                    "entity": {
-                        "id": self.name,
-                        "name": self.name,
-                        "type": "agent",
-                        "attributes": {
-                            "model": self.model_name,
-                            "purpose": self.purpose
-                        }
+                    "id": self.name,
+                    "name": self.name,
+                    "type": "agent",
+                    "attributes": {
+                        "model": self.model_name,
+                        "purpose": self.purpose
                     }
                 }
             )
@@ -1187,13 +1185,11 @@ class Agent(Model):
     def _create_tool_source(self, tool_name: str) -> Dict:
         """Creates a standardized source entity dict for tool messages."""
         return {
-            "entity": {
-                "id": tool_name,
-                "name": tool_name,
-                "type": "tool",
-                "attributes": {
-                    "agent_id": self.name
-                }
+            "id": tool_name,
+            "name": tool_name,
+            "type": "tool",
+            "attributes": {
+                "agent_id": self.name
             }
         }
 
@@ -1205,10 +1201,8 @@ class Agent(Model):
         }
         
         return {
-            "entity": {
-                "id": self.name,
-                "name": self.name,
-                "type": "agent",
-                "attributes": attributes
-            }
+            "id": self.name,
+            "name": self.name,
+            "type": "agent",
+            "attributes": attributes
         } 
