@@ -13,6 +13,7 @@ from tyler.models.attachment import Attachment
 from tyler.database.thread_store import ThreadStore
 from tyler.storage.file_store import FileStore
 from tyler.utils.tool_runner import tool_runner
+from tyler.utils.registry import get, register
 from enum import Enum
 from tyler.utils.logging import get_logger
 import asyncio
@@ -115,14 +116,16 @@ class Agent(Model):
     version: str = Field(default="1.0.0")
     tools: List[Union[str, Dict]] = Field(default_factory=list, description="List of tools available to the agent. Can include built-in tool module names (as strings) and custom tools (as dicts with required 'definition' and 'implementation' keys, and an optional 'attributes' key for tool metadata). For built-in tools, you can specify specific tools to include using the format 'module:tool1,tool2'.")
     max_tool_iterations: int = Field(default=10)
-    thread_store: Optional[ThreadStore] = Field(default=None, description="Thread storage implementation. Uses ThreadStore with memory backend by default.")
-    file_store: Optional[FileStore] = Field(default=None, description="File storage implementation. Uses FileStore with default settings if not provided.")
     agents: List["Agent"] = Field(default_factory=list, description="List of agents that this agent can delegate tasks to.")
     
     _prompt: AgentPrompt = PrivateAttr(default_factory=AgentPrompt)
     _iteration_count: int = PrivateAttr(default=0)
     _processed_tools: List[Dict] = PrivateAttr(default_factory=list)
     _system_prompt: str = PrivateAttr(default="")
+    _thread_store_name: str = PrivateAttr(default=None)
+    _file_store_name: str = PrivateAttr(default=None)
+    _thread_store: Optional[ThreadStore] = PrivateAttr(default=None)
+    _file_store: Optional[FileStore] = PrivateAttr(default=None)
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -130,14 +133,6 @@ class Agent(Model):
     }
 
     def __init__(self, **data):
-        # Initialize thread_store before super().__init__ if not provided
-        if 'thread_store' not in data or data['thread_store'] is None:
-            data['thread_store'] = ThreadStore()
-        
-        # Initialize file_store if not provided
-        if 'file_store' not in data or data['file_store'] is None:
-            data['file_store'] = FileStore()
-            
         super().__init__(**data)
         
         # Generate system prompt once at initialization
@@ -225,6 +220,72 @@ class Agent(Model):
                 
                 logger.info(f"Registered agent tool: delegate_to_{agent.name}")
 
+    def set_stores(self, thread_store_name: str = "default", file_store_name: str = "default") -> "Agent":
+        """Configure the agent with specific thread and file stores from the registry.
+        
+        Args:
+            thread_store_name: Name of the thread store in the registry
+            file_store_name: Name of the file store in the registry
+            
+        Returns:
+            Self for method chaining
+        """
+        # Store the names for later lookup
+        self._thread_store_name = thread_store_name
+        self._file_store_name = file_store_name
+        
+        # Clear any cached stores so next access will use the registry
+        self._thread_store = None
+        self._file_store = None
+            
+        return self
+        
+    async def _get_thread_store(self) -> ThreadStore:
+        """Get the thread store from registry or create a default one.
+        
+        Returns:
+            ThreadStore instance
+        """
+        # If we have a cached instance, use it
+        if self._thread_store is not None:
+            return self._thread_store
+            
+        # Try to get from registry using the explicitly set name
+        if hasattr(self, "_thread_store_name"):
+            thread_store = get("thread_store", self._thread_store_name)
+            if thread_store is not None:
+                # Cache for future use
+                self._thread_store = thread_store
+                return thread_store
+            
+        # Create default - ephemeral, not registered
+        logger.info(f"Creating ephemeral in-memory thread store for agent {self.name}")
+        self._thread_store = await ThreadStore.create()
+        return self._thread_store
+        
+    async def _get_file_store(self) -> FileStore:
+        """Get the file store from registry or create a default one.
+        
+        Returns:
+            FileStore instance
+        """
+        # If we have a cached instance, use it
+        if self._file_store is not None:
+            return self._file_store
+            
+        # Try to get from registry using the explicitly set name
+        if hasattr(self, "_file_store_name"):
+            file_store = get("file_store", self._file_store_name)
+            if file_store is not None:
+                # Cache for future use
+                self._file_store = file_store
+                return file_store
+            
+        # Create default - ephemeral, not registered
+        logger.info(f"Creating ephemeral file store for agent {self.name}")
+        self._file_store = await FileStore.create()
+        return self._file_store
+
     @weave.op()
     def _normalize_tool_call(self, tool_call):
         """Convert a tool_call dict to an object with attributes so it can be used by tool_runner."""
@@ -290,7 +351,7 @@ class Agent(Model):
             Tuple[Any, Dict]: The completion response and metrics.
         """
         # Get thread messages (these won't include system messages as they're filtered out)
-        thread_messages = await thread.get_messages_for_chat_completion(file_store=self.file_store)
+        thread_messages = await thread.get_messages_for_chat_completion(file_store=self._get_file_store())
         
         # Create completion messages with ephemeral system prompt at the beginning
         completion_messages = [{"role": "system", "content": self._system_prompt}] + thread_messages
@@ -381,9 +442,10 @@ class Agent(Model):
     async def _get_thread(self, thread_or_id: Union[str, Thread]) -> Thread:
         """Get thread object from ID or return the thread object directly."""
         if isinstance(thread_or_id, str):
-            if not self.thread_store:
+            thread_store = await self._get_thread_store()
+            if not thread_store:
                 raise ValueError("Thread store is required when passing thread ID")
-            thread = await self.thread_store.get(thread_or_id)
+            thread = await thread_store.get(thread_or_id)
             if not thread:
                 raise ValueError(f"Thread with ID {thread_or_id} not found")
             return thread
@@ -522,8 +584,8 @@ class Agent(Model):
         )
         thread.add_message(message)
         new_messages.append(message)
-        if self.thread_store:
-            await self.thread_store.save(thread)
+        if await self._get_thread_store():
+            await self._get_thread_store().save(thread)
         return thread, [m for m in new_messages if m.role != "user"]
 
     @weave.op()
@@ -585,8 +647,8 @@ class Agent(Model):
                         thread.add_message(message)
                         new_messages.append(message)
                         # Save on error
-                        if self.thread_store:
-                            await self.thread_store.save(thread)
+                        if await self._get_thread_store():
+                            await self._get_thread_store().save(thread)
                         break
                     
                     # For non-streaming responses, get content and tool calls directly
@@ -696,8 +758,8 @@ class Agent(Model):
                                 should_break = True
                                 
                         # Save after processing all tool calls but before next completion
-                        if self.thread_store:
-                            await self.thread_store.save(thread)
+                        if await self._get_thread_store():
+                            await self._get_thread_store().save(thread)
                             
                         if should_break:
                             break
@@ -726,8 +788,8 @@ class Agent(Model):
                     thread.add_message(message)
                     new_messages.append(message)
                     # Save on error
-                    if self.thread_store:
-                        await self.thread_store.save(thread)
+                    if await self._get_thread_store():
+                        await self._get_thread_store().save(thread)
                     break
                 
             # Handle max iterations if needed
@@ -741,8 +803,8 @@ class Agent(Model):
                 new_messages.append(message)
                 
             # Final save at end of processing
-            if self.thread_store:
-                await self.thread_store.save(thread)
+            if await self._get_thread_store():
+                await self._get_thread_store().save(thread)
                 
             return thread, [m for m in new_messages if m.role != "user"]
 
@@ -774,8 +836,8 @@ class Agent(Model):
                 
             thread.add_message(message)
             # Save on error
-            if self.thread_store:
-                await self.thread_store.save(thread)
+            if await self._get_thread_store():
+                await self._get_thread_store().save(thread)
             return thread, [message]
 
     @weave.op()
@@ -808,8 +870,8 @@ class Agent(Model):
                 )
                 thread.add_message(message)
                 yield StreamUpdate(StreamUpdate.Type.ASSISTANT_MESSAGE, message)
-                if self.thread_store:
-                    await self.thread_store.save(thread)
+                if await self._get_thread_store():
+                    await self._get_thread_store().save(thread)
                 return
 
             while self._iteration_count < self.max_tool_iterations:
@@ -836,8 +898,8 @@ class Agent(Model):
                         new_messages.append(message)
                         yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
                         # Save on error like in go
-                        if self.thread_store:
-                            await self.thread_store.save(thread)
+                        if await self._get_thread_store():
+                            await self._get_thread_store().save(thread)
                         break
 
                     # Process streaming response
@@ -947,8 +1009,8 @@ class Agent(Model):
                     # If no tool calls, we're done
                     if not current_tool_calls:
                         # Save state like in go
-                        if self.thread_store:
-                            await self.thread_store.save(thread)
+                        if await self._get_thread_store():
+                            await self._get_thread_store().save(thread)
                         break
 
                     # Execute tools in parallel and yield results
@@ -977,8 +1039,8 @@ class Agent(Model):
                                     error_msg = f"Tool execution failed: Invalid JSON in tool arguments: {json_err}"
                                     yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
                                     # Save on error
-                                    if self.thread_store:
-                                        await self.thread_store.save(thread)
+                                    if await self._get_thread_store():
+                                        await self._get_thread_store().save(thread)
                                     # Break out of the inner loop and continue to the next iteration
                                     raise ValueError(error_msg)
 
@@ -1070,8 +1132,8 @@ class Agent(Model):
                                 should_break = True
                         
                         # Save after processing all tool calls but before next completion
-                        if self.thread_store:
-                            await self.thread_store.save(thread)
+                        if await self._get_thread_store():
+                            await self._get_thread_store().save(thread)
                             
                         if should_break:
                             break
@@ -1096,13 +1158,13 @@ class Agent(Model):
                         new_messages.append(error_message)
                         yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
                         # Save on error like in go
-                        if self.thread_store:
-                            await self.thread_store.save(thread)
+                        if await self._get_thread_store():
+                            await self._get_thread_store().save(thread)
                         break
 
                     # Save after processing all tool calls but before next completion
-                    if self.thread_store:
-                        await self.thread_store.save(thread)
+                    if await self._get_thread_store():
+                        await self._get_thread_store().save(thread)
                             
                     if should_break:
                         break
@@ -1132,8 +1194,8 @@ class Agent(Model):
                     new_messages.append(error_message)
                     yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
                     # Save on error like in go
-                    if self.thread_store:
-                        await self.thread_store.save(thread)
+                    if await self._get_thread_store():
+                        await self._get_thread_store().save(thread)
                     break
 
             # Handle max iterations
@@ -1148,8 +1210,8 @@ class Agent(Model):
                 yield StreamUpdate(StreamUpdate.Type.ASSISTANT_MESSAGE, message)
 
             # Save final state if using thread store
-            if self.thread_store:
-                await self.thread_store.save(thread)
+            if await self._get_thread_store():
+                await self._get_thread_store().save(thread)
 
             # Yield final complete update
             new_messages = [m for m in thread.messages if m.role != "user"]
@@ -1173,8 +1235,8 @@ class Agent(Model):
             new_messages.append(error_message)
             yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
             # Save on error like in go
-            if self.thread_store:
-                await self.thread_store.save(thread)
+            if await self._get_thread_store():
+                await self._get_thread_store().save(thread)
             raise  # Re-raise to ensure error is properly propagated
 
         finally:
