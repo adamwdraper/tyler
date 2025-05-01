@@ -10,11 +10,12 @@ import asyncio
 from sqlalchemy import create_engine, select, cast, String, text
 from sqlalchemy.orm import sessionmaker, selectinload
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+# Direct imports
 from tyler.models.thread import Thread
 from tyler.models.message import Message
 from tyler.models.attachment import Attachment
-from tyler.utils.logging import get_logger
 from tyler.storage.file_store import FileStore
+from tyler.utils.logging import get_logger
 from .models import Base, ThreadRecord, MessageRecord
 
 logger = get_logger(__name__)

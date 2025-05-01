@@ -253,10 +253,8 @@ For a complete list of supported providers and models, see the [LiteLLM document
 This example uses in-memory storage which is perfect for scripts and testing. 
 
 ```python
-from dotenv import load_dotenv
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from dotenv import load_dotenv 
+from tyler import Agent, Thread, Message
 import asyncio
 import os
 

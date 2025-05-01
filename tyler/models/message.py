@@ -5,7 +5,8 @@ import hashlib
 import json
 from tyler.utils.logging import get_logger
 import base64
-from .attachment import Attachment
+# Direct imports
+from tyler.models.attachment import Attachment
 from tyler.storage.file_store import FileStore
 
 # Get configured logger

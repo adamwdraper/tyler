@@ -9,7 +9,7 @@ The `Agent` class is the core component of Tyler, responsible for managing conve
 ## Initialization
 
 ```python
-from tyler.models.agent import Agent
+from tyler import Agent
 
 agent = Agent(
     model_name: str = "gpt-4o",
@@ -397,7 +397,7 @@ coordinator = Agent(
    agent = Agent()  # Uses in-memory store
    
    # For production
-   from tyler.database.thread_store import ThreadStore
+   from tyler import ThreadStore
    store = ThreadStore("postgresql://...")
    agent = Agent(thread_store=store)
    ```

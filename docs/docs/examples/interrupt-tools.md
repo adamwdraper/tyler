@@ -19,9 +19,7 @@ The example shows:
 
 ```python
 from dotenv import load_dotenv
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message
 import weave
 import asyncio
 import json

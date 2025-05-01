@@ -106,7 +106,6 @@ class Attachment(BaseModel):
             
             try:
                 # Get the file URL from FileStore
-                from tyler.storage.file_store import FileStore
                 self.attributes["url"] = FileStore.get_file_url(self.storage_path)
                 logger.debug(f"Updated attributes with URL: {self.attributes['url']}")
             except Exception as e:

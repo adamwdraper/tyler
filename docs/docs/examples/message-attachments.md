@@ -20,11 +20,7 @@ The example shows:
 
 ```python
 from dotenv import load_dotenv
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
-from tyler.models.attachment import Attachment
-from tyler.database.thread_store import ThreadStore
+from tyler import Agent, Thread, Message, Attachment, ThreadStore
 import asyncio
 import os
 import weave

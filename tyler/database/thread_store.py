@@ -20,7 +20,7 @@ class ThreadStore:
     
     Usage:
         # RECOMMENDED: Factory pattern for immediate connection validation
-        from tyler.database.thread_store import ThreadStore
+        from tyler import ThreadStore
         store = await ThreadStore.create("postgresql+asyncpg://user:pass@localhost/dbname")
         
         # Or for in-memory storage:

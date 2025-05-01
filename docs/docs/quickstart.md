@@ -54,9 +54,7 @@ Let's create a simple agent that can use web tools and respond to questions. Thi
 
 ```python
 from dotenv import load_dotenv
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message
 import asyncio
 import weave
 import os

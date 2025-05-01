@@ -9,7 +9,7 @@ The `Message` class represents individual interactions within a thread. It handl
 ## Initialization
 
 ```python
-from tyler.models.message import Message
+from tyler import Message
 from datetime import datetime, UTC
 
 # Basic text message

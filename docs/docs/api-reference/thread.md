@@ -9,7 +9,7 @@ The `Thread` class manages conversations and maintains context between messages.
 ## Initialization
 
 ```python
-from tyler.models.thread import Thread
+from tyler import Thread
 from datetime import datetime, UTC
 
 # Create a new thread

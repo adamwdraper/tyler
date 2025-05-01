@@ -4,8 +4,7 @@ import logging
 
 # Type hints with conditional imports to avoid circular dependencies
 if TYPE_CHECKING:
-    from tyler.database.thread_store import ThreadStore
-    from tyler.storage.file_store import FileStore
+    from tyler import ThreadStore, FileStore
     
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ The `Attachment` class represents files attached to messages in Tyler. It handle
 ## Initialization
 
 ```python
-from tyler.models.attachment import Attachment
+from tyler import Attachment
 
 # Basic attachment
 attachment = Attachment(

@@ -57,7 +57,7 @@ SLACK_SIGNING_SECRET=your-slack-signing-secret
 The `Agent` class accepts various configuration options to customize its behavior:
 
 ```python
-from tyler.models.agent import Agent
+from tyler import Agent
 
 agent = Agent(
     # Required
@@ -104,7 +104,7 @@ Tyler supports multiple database backends for storing threads and messages. The 
 
 #### Memory storage (Default)
 ```python
-from tyler.database.thread_store import ThreadStore
+from tyler import ThreadStore
 
 # Use factory pattern for immediate connection validation
 store = await ThreadStore.create()  # Uses memory backend
@@ -126,7 +126,7 @@ Key characteristics:
 
 #### PostgreSQL storage
 ```python
-from tyler.database.thread_store import ThreadStore
+from tyler import ThreadStore
 
 # Use factory pattern for immediate connection validation
 db_url = "postgresql+asyncpg://user:pass@localhost/dbname"
@@ -164,7 +164,7 @@ Key characteristics:
 
 #### SQLite storage
 ```python
-from tyler.database.thread_store import ThreadStore
+from tyler import ThreadStore
 
 # Use factory pattern for immediate connection validation
 db_url = "sqlite+aiosqlite:///path/to/db.sqlite"
@@ -206,8 +206,7 @@ Configuration options:
 #### Creating and using a FileStore instance
 
 ```python
-from tyler.storage.file_store import FileStore
-from tyler.models.agent import Agent
+from tyler import FileStore, Agent
 
 # Create a FileStore instance with factory pattern
 file_store = await FileStore.create(

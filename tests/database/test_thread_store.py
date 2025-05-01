@@ -559,7 +559,7 @@ async def test_save_thread_partial_attachment_failure(thread_store):
     assert retrieved_thread is None
     
     # Verify the file was cleaned up from storage
-    from tyler.storage.file_store import FileStore
+    from tyler import FileStore
     store = FileStore()
     files = await store.list_files()
     assert not any(f.endswith("good.txt") for f in files)
@@ -626,7 +626,7 @@ async def test_save_thread_database_failure_keeps_attachments(thread_store, monk
         assert "Database error" in str(exc_info.value)
     
     # Verify attachment files still exist (weren't cleaned up)
-    from tyler.storage.file_store import FileStore
+    from tyler import FileStore
     store = FileStore()
     files = await store.list_files()
     assert any(attachment.file_id in f for f in files), f"Expected to find file ID {attachment.file_id} in {files}"

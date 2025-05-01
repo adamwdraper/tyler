@@ -7,11 +7,14 @@ from typing import List, Dict, Any, Optional, Union, AsyncGenerator, Tuple
 from datetime import datetime, UTC
 from pydantic import Field, PrivateAttr
 from litellm import acompletion
+
+# Direct imports to avoid circular dependency
 from tyler.models.thread import Thread
 from tyler.models.message import Message
 from tyler.models.attachment import Attachment
 from tyler.database.thread_store import ThreadStore
 from tyler.storage.file_store import FileStore
+
 from tyler.utils.tool_runner import tool_runner
 from tyler.utils.registry import get, register
 from enum import Enum

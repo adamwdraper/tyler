@@ -21,9 +21,7 @@ The example shows:
 from dotenv import load_dotenv
 import os
 import asyncio
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread, Message
-from tyler.database.thread_store import ThreadStore
+from tyler import Agent, Thread, Message, ThreadStore
 from tyler.storage import get_file_store
 import weave
 

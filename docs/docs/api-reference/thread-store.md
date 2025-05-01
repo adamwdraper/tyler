@@ -9,7 +9,7 @@ The `ThreadStore` class provides a unified interface for thread storage with plu
 ## Initialization
 
 ```python
-from tyler.database.thread_store import ThreadStore
+from tyler import ThreadStore
 
 # RECOMMENDED: Factory pattern for immediate connection validation
 # PostgreSQL
