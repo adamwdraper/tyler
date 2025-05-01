@@ -14,8 +14,7 @@ import os
 import asyncio
 import weave
 import sys
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread, Message
+from tyler import Agent, Thread, Message
 
 try:
     if os.getenv("WANDB_API_KEY"):

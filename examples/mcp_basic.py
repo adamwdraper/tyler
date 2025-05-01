@@ -16,9 +16,7 @@ import sys
 import weave
 from typing import List, Dict, Any
 
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message
 from tyler.mcp.utils import initialize_mcp_service, cleanup_mcp_service
 
 # Add the parent directory to the path so we can import the example utils

@@ -16,10 +16,7 @@ import asyncio
 import weave
 import sys
 import json
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread, Message
-from tyler.models.attachment import Attachment
-from tyler.database.thread_store import ThreadStore
+from tyler import Agent, Thread, Message, Attachment, ThreadStore
 
 try:
     if os.getenv("WANDB_API_KEY"):

@@ -6,7 +6,6 @@ from tyler.utils.registry import (
     Registry, register, get, list,
     register_thread_store, get_thread_store,
     register_file_store, get_file_store,
-    register_stores, create_stores
 )
 
 class MockComponent:
@@ -192,64 +191,4 @@ def test_file_store_convenience_functions(reset_registry):
     
     # Get a nonexistent store
     missing = get_file_store("missing")
-    assert missing is None
-
-def test_register_stores(reset_registry):
-    """Test registering both thread and file stores with the same name."""
-    # Create stores
-    thread_store = MockThreadStore("postgresql://localhost/test")
-    file_store = MockFileStore("/path/to/files")
-    
-    # Register both with the same name
-    ts, fs = register_stores("environment", thread_store, file_store)
-    
-    # Should return the registered stores
-    assert ts is thread_store
-    assert fs is file_store
-    
-    # Get them using the individual convenience functions
-    retrieved_ts = get_thread_store("environment")
-    retrieved_fs = get_file_store("environment")
-    
-    # Should be the same stores
-    assert retrieved_ts is thread_store
-    assert retrieved_fs is file_store
-    
-    # Should also be accessible using the generic get function
-    assert get("thread_store", "environment") is thread_store
-    assert get("file_store", "environment") is file_store
-
-# New test for the async create_stores function
-@pytest.mark.asyncio
-async def test_create_stores(reset_registry):
-    """Test creating and registering stores in one step."""
-    # Mock the store creation functions
-    thread_store = MockThreadStore("postgresql://localhost/test")
-    file_store = MockFileStore("/path/to/files")
-    
-    # Use patch to replace the create methods with AsyncMocks
-    with patch('tyler.database.thread_store.ThreadStore.create', new_callable=AsyncMock) as mock_thread_create, \
-         patch('tyler.storage.file_store.FileStore.create', new_callable=AsyncMock) as mock_file_create:
-        
-        # Configure the mocks to return our test objects
-        mock_thread_create.return_value = thread_store
-        mock_file_create.return_value = file_store
-        
-        # Call the function
-        ts, fs = await create_stores(
-            "test_env", 
-            thread_store_url="postgresql://localhost/test",
-            file_store_path="/path/to/files"
-        )
-        
-        # Verify the create methods were called with the right arguments
-        mock_thread_create.assert_called_once_with("postgresql://localhost/test")
-        mock_file_create.assert_called_once_with("/path/to/files")
-        
-        # Verify the stores were registered and returned
-        assert ts is thread_store
-        assert fs is file_store
-        
-        # Check they can be retrieved from the registry
-        assert get_thread_store("test_env") is thread_store
-        assert get_file_store("test_env") is file_store 
+    assert missing is None 

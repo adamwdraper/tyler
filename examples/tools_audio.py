@@ -18,9 +18,7 @@ import sys
 import json
 import base64
 from pathlib import Path
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread, Message
-from tyler.database.thread_store import ThreadStore
+from tyler import Agent, Thread, Message, ThreadStore
 
 try:
     if os.getenv("WANDB_API_KEY"):

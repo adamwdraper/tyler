@@ -21,11 +21,7 @@ import weave
 import sys
 import json
 from pathlib import Path
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
-from tyler.models.attachment import Attachment
-from tyler.database.thread_store import ThreadStore
+from tyler import Agent, Thread, Message, Attachment, ThreadStore
 
 try:
     if os.getenv("WANDB_API_KEY"):

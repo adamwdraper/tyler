@@ -134,48 +134,4 @@ def get_file_store(name: str) -> Optional["FileStore"]:
     Returns:
         The file store instance or None if not found
     """
-    return get("file_store", name)
-
-# Combined operations
-def register_stores(name: str, thread_store: "ThreadStore", file_store: "FileStore") -> Tuple["ThreadStore", "FileStore"]:
-    """Register both thread and file stores with the same name.
-    
-    This is a convenience function for the common case where both stores
-    share the same name identifier.
-    
-    Args:
-        name: Name identifier for both stores
-        thread_store: The thread store instance
-        file_store: The file store instance
-        
-    Returns:
-        Tuple of (thread_store, file_store)
-    """
-    register_thread_store(name, thread_store)
-    register_file_store(name, file_store)
-    return thread_store, file_store
-
-async def create_stores(name: str, thread_store_url: Optional[str] = None, 
-                        file_store_path: Optional[str] = None) -> Tuple["ThreadStore", "FileStore"]:
-    """Create and register both thread and file stores.
-    
-    This is a convenience function for creating and registering stores in one step.
-    
-    Args:
-        name: Name identifier for both stores
-        thread_store_url: Database URL for thread store (optional)
-        file_store_path: Path for file store (optional)
-        
-    Returns:
-        Tuple of (thread_store, file_store)
-    """
-    # Import here to avoid circular dependencies
-    from tyler.database.thread_store import ThreadStore
-    from tyler.storage.file_store import FileStore
-    
-    # Create stores
-    thread_store = await ThreadStore.create(thread_store_url)
-    file_store = await FileStore.create(file_store_path)
-    
-    # Register stores
-    return register_stores(name, thread_store, file_store) 
+    return get("file_store", name) 

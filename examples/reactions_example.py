@@ -11,10 +11,7 @@ This example shows how to:
 
 import asyncio
 from typing import Dict, List
-from tyler.models.thread import Thread
-from tyler.models.message import Message
-from tyler.database.thread_store import ThreadStore
-
+from tyler import Thread, Message, ThreadStore
 
 async def main():
     # Create an in-memory ThreadStore for this example
