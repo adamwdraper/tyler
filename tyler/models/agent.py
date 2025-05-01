@@ -584,8 +584,9 @@ class Agent(Model):
         )
         thread.add_message(message)
         new_messages.append(message)
-        if await self._get_thread_store():
-            await self._get_thread_store().save(thread)
+        thread_store = await self._get_thread_store()
+        if thread_store:
+            await thread_store.save(thread)
         return thread, [m for m in new_messages if m.role != "user"]
 
     @weave.op()
@@ -647,8 +648,9 @@ class Agent(Model):
                         thread.add_message(message)
                         new_messages.append(message)
                         # Save on error
-                        if await self._get_thread_store():
-                            await self._get_thread_store().save(thread)
+                        thread_store = await self._get_thread_store()
+                        if thread_store:
+                            await thread_store.save(thread)
                         break
                     
                     # For non-streaming responses, get content and tool calls directly
@@ -758,8 +760,9 @@ class Agent(Model):
                                 should_break = True
                                 
                         # Save after processing all tool calls but before next completion
-                        if await self._get_thread_store():
-                            await self._get_thread_store().save(thread)
+                        thread_store = await self._get_thread_store()
+                        if thread_store:
+                            await thread_store.save(thread)
                             
                         if should_break:
                             break
@@ -788,8 +791,9 @@ class Agent(Model):
                     thread.add_message(message)
                     new_messages.append(message)
                     # Save on error
-                    if await self._get_thread_store():
-                        await self._get_thread_store().save(thread)
+                    thread_store = await self._get_thread_store()
+                    if thread_store:
+                        await thread_store.save(thread)
                     break
                 
             # Handle max iterations if needed
@@ -803,8 +807,9 @@ class Agent(Model):
                 new_messages.append(message)
                 
             # Final save at end of processing
-            if await self._get_thread_store():
-                await self._get_thread_store().save(thread)
+            thread_store = await self._get_thread_store()
+            if thread_store:
+                await thread_store.save(thread)
                 
             return thread, [m for m in new_messages if m.role != "user"]
 
@@ -836,8 +841,9 @@ class Agent(Model):
                 
             thread.add_message(message)
             # Save on error
-            if await self._get_thread_store():
-                await self._get_thread_store().save(thread)
+            thread_store = await self._get_thread_store()
+            if thread_store:
+                await thread_store.save(thread)
             return thread, [message]
 
     @weave.op()
@@ -870,8 +876,9 @@ class Agent(Model):
                 )
                 thread.add_message(message)
                 yield StreamUpdate(StreamUpdate.Type.ASSISTANT_MESSAGE, message)
-                if await self._get_thread_store():
-                    await self._get_thread_store().save(thread)
+                thread_store = await self._get_thread_store()
+                if thread_store:
+                    await thread_store.save(thread)
                 return
 
             while self._iteration_count < self.max_tool_iterations:
@@ -898,8 +905,9 @@ class Agent(Model):
                         new_messages.append(message)
                         yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
                         # Save on error like in go
-                        if await self._get_thread_store():
-                            await self._get_thread_store().save(thread)
+                        thread_store = await self._get_thread_store()
+                        if thread_store:
+                            await thread_store.save(thread)
                         break
 
                     # Process streaming response
@@ -1009,8 +1017,9 @@ class Agent(Model):
                     # If no tool calls, we're done
                     if not current_tool_calls:
                         # Save state like in go
-                        if await self._get_thread_store():
-                            await self._get_thread_store().save(thread)
+                        thread_store = await self._get_thread_store()
+                        if thread_store:
+                            await thread_store.save(thread)
                         break
 
                     # Execute tools in parallel and yield results
@@ -1039,8 +1048,9 @@ class Agent(Model):
                                     error_msg = f"Tool execution failed: Invalid JSON in tool arguments: {json_err}"
                                     yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
                                     # Save on error
-                                    if await self._get_thread_store():
-                                        await self._get_thread_store().save(thread)
+                                    thread_store = await self._get_thread_store()
+                                    if thread_store:
+                                        await thread_store.save(thread)
                                     # Break out of the inner loop and continue to the next iteration
                                     raise ValueError(error_msg)
 
@@ -1132,8 +1142,9 @@ class Agent(Model):
                                 should_break = True
                         
                         # Save after processing all tool calls but before next completion
-                        if await self._get_thread_store():
-                            await self._get_thread_store().save(thread)
+                        thread_store = await self._get_thread_store()
+                        if thread_store:
+                            await thread_store.save(thread)
                             
                         if should_break:
                             break
@@ -1158,13 +1169,15 @@ class Agent(Model):
                         new_messages.append(error_message)
                         yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
                         # Save on error like in go
-                        if await self._get_thread_store():
-                            await self._get_thread_store().save(thread)
+                        thread_store = await self._get_thread_store()
+                        if thread_store:
+                            await thread_store.save(thread)
                         break
 
                     # Save after processing all tool calls but before next completion
-                    if await self._get_thread_store():
-                        await self._get_thread_store().save(thread)
+                    thread_store = await self._get_thread_store()
+                    if thread_store:
+                        await thread_store.save(thread)
                             
                     if should_break:
                         break
@@ -1194,8 +1207,9 @@ class Agent(Model):
                     new_messages.append(error_message)
                     yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
                     # Save on error like in go
-                    if await self._get_thread_store():
-                        await self._get_thread_store().save(thread)
+                    thread_store = await self._get_thread_store()
+                    if thread_store:
+                        await thread_store.save(thread)
                     break
 
             # Handle max iterations
@@ -1210,8 +1224,9 @@ class Agent(Model):
                 yield StreamUpdate(StreamUpdate.Type.ASSISTANT_MESSAGE, message)
 
             # Save final state if using thread store
-            if await self._get_thread_store():
-                await self._get_thread_store().save(thread)
+            thread_store = await self._get_thread_store()
+            if thread_store:
+                await thread_store.save(thread)
 
             # Yield final complete update
             new_messages = [m for m in thread.messages if m.role != "user"]
@@ -1235,8 +1250,9 @@ class Agent(Model):
             new_messages.append(error_message)
             yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
             # Save on error like in go
-            if await self._get_thread_store():
-                await self._get_thread_store().save(thread)
+            thread_store = await self._get_thread_store()
+            if thread_store:
+                await thread_store.save(thread)
             raise  # Re-raise to ensure error is properly propagated
 
         finally:

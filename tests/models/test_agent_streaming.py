@@ -8,6 +8,10 @@ from litellm import ModelResponse
 import json
 from types import SimpleNamespace
 from tyler.database.thread_store import ThreadStore
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 def create_streaming_chunk(content=None, tool_calls=None, role="assistant", usage=None):
     """Helper function to create streaming chunks with proper structure"""
@@ -593,12 +597,58 @@ async def test_go_stream_empty_arguments():
 @pytest.mark.asyncio
 async def test_go_stream_thread_store_save():
     """Test that thread is saved during streaming"""
-    # Create thread store (will initialize automatically when needed)
-    thread_store = ThreadStore()
+    # Create mock thread store
+    mock_thread_store = MagicMock(spec=ThreadStore)
+    mock_thread_store.save = AsyncMock(return_value=None)
+    # Keep track of saved thread state
+    saved_thread_data = {}
     
-    agent = Agent(stream=True, thread_store=thread_store)
+    async def mock_save(thread):
+        # Simulate saving by storing messages using model_dump(mode='json')
+        # to ensure datetime is stored as string, like a real DB would
+        saved_thread_data[thread.id] = [
+            msg.model_dump(mode='json') for msg in thread.messages
+        ]
+        
+    async def mock_get(thread_id):
+        if thread_id in saved_thread_data:
+            # Reconstruct thread from saved data
+            reconstructed_messages = []
+            for msg_data in saved_thread_data[thread_id]:
+                # --- Key Change: Parse timestamp string back to datetime ---
+                if 'timestamp' in msg_data and isinstance(msg_data['timestamp'], str):
+                    try:
+                        # Ensure the string is parsed correctly into a datetime object
+                        msg_data['timestamp'] = datetime.fromisoformat(msg_data['timestamp'])
+                    except ValueError:
+                        # Handle potential parsing errors, maybe log or use a default
+                        logger.error(f"Failed to parse timestamp: {msg_data['timestamp']}")
+                        # Optionally set a default or re-raise, depending on desired test behavior
+                        # For now, let's remove it to avoid crashing the test if parsing fails
+                        del msg_data['timestamp'] 
+                # --- End Key Change ---
+                
+                # Recreate message, handling potential missing timestamp if parsing failed
+                try:
+                    reconstructed_messages.append(Message(**msg_data))
+                except Exception as e:
+                     logger.error(f"Failed to reconstruct message: {msg_data} with error {e}")
+                     # Skip this message if reconstruction fails
+                     continue
+                     
+            return Thread(
+                id=thread_id, 
+                messages=reconstructed_messages
+            )
+        return None
+        
+    mock_thread_store.save = mock_save
+    mock_thread_store.get = mock_get
+    
+    agent = Agent(stream=True)
     thread = Thread(id="test-thread")
-    await thread_store.save(thread)
+    # Initial 'save' to put the empty thread in our mock store
+    await mock_thread_store.save(thread)
     
     # Mock chunks with tool call
     chunks = [
@@ -614,6 +664,12 @@ async def test_go_stream_thread_store_save():
     
     mock_weave_call = MagicMock()
     
+    # --- Key Change: Patch _get_thread_store --- 
+    async def get_mock_store():
+        return mock_thread_store
+    agent._get_thread_store = get_mock_store
+    # --- End Key Change ---\
+    
     with patch.object(agent, '_get_completion') as mock_get_completion, \
          patch('tyler.models.agent.tool_runner') as mock_tool_runner:
         mock_get_completion.call.return_value = (async_generator(chunks), mock_weave_call)
@@ -626,10 +682,12 @@ async def test_go_stream_thread_store_save():
         async for update in agent.go_stream(thread):
             updates.append(update)
         
-        # Verify thread was saved
-        saved_thread = await thread_store.get(thread.id)
+        # Verify thread was saved with messages
+        saved_thread = await mock_thread_store.get(thread.id)
         assert saved_thread is not None
-        assert len(saved_thread.messages) > 0
+        # Check that messages were added before saving
+        # We expect at least the assistant message and the tool message
+        assert len(saved_thread.messages) >= 2, f"Expected >= 2 messages, found {len(saved_thread.messages)}"
 
 @pytest.mark.asyncio
 async def test_go_stream_reset_iteration_count():
