@@ -1,10 +1,6 @@
 import pytest
 from datetime import datetime, UTC, timedelta
-from tyler.models.thread import Thread
-from tyler.models.message import Message
-from tyler.models.attachment import Attachment
-from unittest.mock import patch, AsyncMock
-import os
+from tyler import Thread, Message, Attachment
 from litellm import ModelResponse
 
 @pytest.fixture

@@ -5,13 +5,9 @@ import tempfile
 from datetime import datetime, UTC
 from sqlalchemy import select, text
 from sqlalchemy.orm import selectinload
-from tyler.database.thread_store import ThreadStore
-from tyler.database.models import ThreadRecord
+from tyler import Thread, Message, Attachment, ThreadStore
 from tyler.database.storage_backend import MemoryBackend, SQLBackend
-from tyler.models.thread import Thread
-from tyler.models.message import Message
 from tyler.database.models import Base
-from tyler.models.attachment import Attachment
 
 pytest_plugins = ('pytest_asyncio',)
 

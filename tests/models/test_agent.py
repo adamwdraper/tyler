@@ -3,20 +3,13 @@ os.environ["OPENAI_API_KEY"] = "dummy"
 os.environ["OPENAI_ORG_ID"] = "dummy"
 import pytest
 from unittest.mock import patch, MagicMock, create_autospec, Mock, AsyncMock
-from tyler.models.agent import Agent, AgentPrompt
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message, ThreadStore
 from tyler.utils.tool_runner import tool_runner, ToolRunner
-from tyler.database.thread_store import ThreadStore
 from tyler.database.storage_backend import MemoryBackend
 from openai import OpenAI
 from litellm import ModelResponse
 import base64
-import asyncio
-from tyler.models.attachment import Attachment
-from datetime import datetime, UTC
 import os
-import types
 import json
 from types import SimpleNamespace
 

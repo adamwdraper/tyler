@@ -11,12 +11,9 @@ from unittest.mock import patch, MagicMock, AsyncMock
 import json
 import types
 import asyncio
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message, ThreadStore
 from tyler.utils.agent_runner import agent_runner
 from tyler.utils.tool_runner import tool_runner
-from tyler.database.thread_store import ThreadStore
 from datetime import datetime, UTC
 
 # Reset agent_runner between tests

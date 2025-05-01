@@ -1,8 +1,7 @@
 import pytest
-from tyler.models.attachment import Attachment
+from tyler import Attachment
 import base64
 import magic
-from datetime import datetime, UTC
 import os
 import tempfile
 from unittest.mock import patch, Mock, AsyncMock

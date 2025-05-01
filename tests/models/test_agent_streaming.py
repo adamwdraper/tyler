@@ -1,13 +1,10 @@
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock, create_autospec
-from tyler.models.agent import Agent, StreamUpdate
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, ThreadStore, Message, StreamUpdate
 from tyler.utils.tool_runner import tool_runner
 from litellm import ModelResponse
 import json
 from types import SimpleNamespace
-from tyler.database.thread_store import ThreadStore
 from datetime import datetime
 import logging
 

@@ -4,8 +4,7 @@ import pytest
 from datetime import datetime, UTC
 
 from tyler.database.storage_backend import MemoryBackend, SQLBackend
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Thread, Message
 from tyler.database.models import Base
 
 

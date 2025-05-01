@@ -1,9 +1,7 @@
 import pytest
 from datetime import datetime, UTC
-from tyler.models.message import Message, TextContent, ImageContent
-from tyler.models.attachment import Attachment
-import json
-import base64
+from tyler import Message, Attachment
+from tyler.models.message import TextContent, ImageContent
 from unittest.mock import patch, Mock, AsyncMock
 import pydantic
 
