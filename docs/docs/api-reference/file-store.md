@@ -11,7 +11,7 @@ The `FileStore` class provides a unified interface for storing and retrieving fi
 ### Factory Pattern
 
 ```python
-from tyler.storage.file_store import FileStore
+from tyler import FileStore
 
 # Create a FileStore instance with factory pattern
 file_store = await FileStore.create(
@@ -24,7 +24,7 @@ file_store = await FileStore.create(
 file_store = await FileStore.create()
 
 # Pass the file_store to an Agent
-from tyler.models.agent import Agent
+from tyler import Agent
 
 agent = Agent(
     model_name="gpt-4o",
@@ -361,8 +361,7 @@ Path to the initialized storage directory.
 The `FileStore` class works seamlessly with the `Attachment` model:
 
 ```python
-from tyler.models.attachment import Attachment
-from tyler.storage.file_store import FileStore
+from tyler import Attachment, FileStore
 
 # Create a FileStore instance
 file_store = await FileStore.create()

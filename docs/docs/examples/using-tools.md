@@ -18,8 +18,7 @@ The example shows:
 
 ```python
 from dotenv import load_dotenv
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread, Message
+from tyler import Agent, Thread, Message
 import weave
 import asyncio
 import os

@@ -14,8 +14,7 @@ import os
 import asyncio
 import weave
 import sys
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread, Message
+from tyler import Agent, Thread, Message
 
 def custom_calculator_implementation(operation: str, x: float, y: float) -> str:
     """

@@ -73,9 +73,7 @@ For a complete list of available configuration options, see the [Configuration G
 You can verify your installation by running a simple test:
 
 ```python
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message
 import asyncio
 
 async def test_installation():

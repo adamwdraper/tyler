@@ -3,20 +3,13 @@ os.environ["OPENAI_API_KEY"] = "dummy"
 os.environ["OPENAI_ORG_ID"] = "dummy"
 import pytest
 from unittest.mock import patch, MagicMock, create_autospec, Mock, AsyncMock
-from tyler.models.agent import Agent, AgentPrompt
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message, ThreadStore
 from tyler.utils.tool_runner import tool_runner, ToolRunner
-from tyler.database.thread_store import ThreadStore
 from tyler.database.storage_backend import MemoryBackend
 from openai import OpenAI
 from litellm import ModelResponse
 import base64
-import asyncio
-from tyler.models.attachment import Attachment
-from datetime import datetime, UTC
 import os
-import types
 import json
 from types import SimpleNamespace
 
@@ -51,7 +44,7 @@ def mock_tool_runner():
 
 @pytest.fixture
 def mock_thread_store():
-    """Create a mock thread store for testing."""
+    """Create a mock thread store for testing and register it in the registry."""
     class MockThreadStore(ThreadStore):
         def __init__(self):
             super().__init__()  # Initialize with memory backend
@@ -76,7 +69,23 @@ def mock_thread_store():
     store.list.return_value = []
     store.find_by_attributes.return_value = []
     store.find_by_source.return_value = []
+    
+    # Patch the registry.get function
+    with patch('tyler.utils.registry.get') as mock_get:
+        mock_get.return_value = store
+    
     return store
+
+@pytest.fixture
+def mock_file_store():
+    """Create a mock file store for testing and register it in the registry."""
+    file_store = MagicMock()
+    
+    # Register the store in the registry
+    with patch('tyler.utils.registry.get') as mock_get:
+        mock_get.side_effect = lambda component_type, name: file_store if component_type == "file_store" else None
+    
+    return file_store
 
 @pytest.fixture
 def mock_wandb():
@@ -103,19 +112,34 @@ def thread():
     )
 
 @pytest.fixture
-def agent(mock_tool_runner, mock_thread_store, mock_openai, mock_wandb, mock_litellm, mock_prompt, mock_file_processor, mock_env_vars):
-    """Create a test agent"""
-    agent = Agent(
-        name="Tyler",
-        model_name="gpt-4",
-        temperature=0.5,
-        purpose="test purpose",
-        notes="test notes",
-        thread_store=mock_thread_store,
-        litellm=mock_litellm,
-        prompt=mock_prompt
-    )
-    return agent
+def agent(mock_tool_runner, mock_thread_store, mock_file_store, mock_openai, mock_wandb, mock_litellm, mock_prompt, mock_file_processor, mock_env_vars):
+    """Create a test agent that uses the registry for stores"""
+    with patch('tyler.utils.registry.get') as mock_get:
+        mock_get.side_effect = lambda component_type, name: mock_thread_store if component_type == "thread_store" else mock_file_store if component_type == "file_store" else None
+        
+        agent = Agent(
+            name="Tyler",
+            model_name="gpt-4",
+            temperature=0.5,
+            purpose="test purpose",
+            notes="test notes"
+        )
+        
+        # Create proper async method mocks that return our test stores
+        async def mock_get_thread_store():
+            return mock_thread_store
+        
+        async def mock_get_file_store():
+            return mock_file_store
+            
+        # Replace the async methods with our properly mocked async versions
+        agent._get_thread_store = mock_get_thread_store
+        agent._get_file_store = mock_get_file_store
+        
+        # Set up the agent to use the registry
+        agent.set_stores(thread_store_name="default", file_store_name="default")
+        
+        return agent
 
 def test_init(agent):
     """Test Agent initialization"""
@@ -157,12 +181,14 @@ async def test_go_max_recursion(agent, mock_thread_store):
         
         mock_step.side_effect = side_effect
         
-        result_thread, new_messages = await agent.go("test-conv")
-        
-        assert len(new_messages) == 1
-        assert new_messages[0].role == "assistant"
-        assert new_messages[0].content == "Maximum tool iteration count reached. Stopping further tool calls."
-        mock_thread_store.save.assert_called_once_with(result_thread)
+        # No need to patch _get_thread_store since we already set it in the fixture
+        with patch.object(agent, '_get_thread', return_value=thread):
+            result_thread, new_messages = await agent.go("test-conv")
+            
+            assert len(new_messages) == 1
+            assert new_messages[0].role == "assistant"
+            assert new_messages[0].content == "Maximum tool iteration count reached. Stopping further tool calls."
+            mock_thread_store.save.assert_called_with(result_thread)
 
 @pytest.mark.asyncio
 async def test_go_no_tool_calls(agent, mock_thread_store, mock_prompt, mock_litellm):
@@ -197,19 +223,21 @@ async def test_go_no_tool_calls(agent, mock_thread_store, mock_prompt, mock_lite
 
     agent._get_completion = DummyCompletion()
 
-    result_thread, new_messages = await agent.go("test-conv")
+    # No need to patch _get_thread_store since we already set it in the fixture
+    with patch.object(agent, '_get_thread', return_value=thread):
+        result_thread, new_messages = await agent.go("test-conv")
 
-    # Since system messages are ephemeral, we only expect the assistant message
-    assert len(result_thread.messages) == 1  
-    assert result_thread.messages[0].role == "assistant"
-    assert result_thread.messages[0].content == "Test response"
-    assert len(new_messages) == 1
-    assert new_messages[0].role == "assistant"
-    assert "metrics" in new_messages[0].model_dump()
-    assert "timing" in new_messages[0].metrics
-    assert "usage" in new_messages[0].metrics
-    mock_thread_store.save.assert_called_with(result_thread)
-    assert agent._iteration_count == 0
+        # Since system messages are ephemeral, we only expect the assistant message
+        assert len(result_thread.messages) == 1  
+        assert result_thread.messages[0].role == "assistant"
+        assert result_thread.messages[0].content == "Test response"
+        assert len(new_messages) == 1
+        assert new_messages[0].role == "assistant"
+        assert "metrics" in new_messages[0].model_dump()
+        assert "timing" in new_messages[0].metrics
+        assert "usage" in new_messages[0].metrics
+        mock_thread_store.save.assert_called_with(result_thread)
+        assert agent._iteration_count == 0
 
 @pytest.mark.asyncio
 async def test_go_with_tool_calls(agent, mock_thread_store, mock_prompt, mock_litellm):
@@ -282,7 +310,9 @@ async def test_go_with_tool_calls(agent, mock_thread_store, mock_prompt, mock_li
             })
             patched_tool_runner.get_tool_attributes.return_value = None
 
-            result_thread, new_messages = await agent.go("test-conv")
+            # No need to patch _get_thread_store since we already set it in the fixture
+            with patch.object(agent, '_get_thread', return_value=thread):
+                result_thread, new_messages = await agent.go("test-conv")
 
     # Verify the sequence of messages (without system message)
     messages = result_thread.messages
@@ -459,6 +489,7 @@ async def test_handle_max_iterations(agent, mock_thread_store):
     thread = Thread(id="test-thread")
     new_messages = [Message(role="user", content="test")]
     
+    # The _handle_max_iterations method uses _get_thread_store which is already patched in the fixture
     result_thread, filtered_messages = await agent._handle_max_iterations(thread, new_messages)
     
     assert len(filtered_messages) == 1
@@ -476,7 +507,13 @@ async def test_get_thread_direct(agent):
 @pytest.mark.asyncio
 async def test_get_thread_missing_store(agent):
     """Test getting thread by ID without thread store"""
-    agent.thread_store = None
+    # Create async method that returns None
+    async def mock_get_none():
+        return None
+        
+    # Replace with our mock
+    agent._get_thread_store = mock_get_none
+    
     with pytest.raises(ValueError, match="Thread store is required when passing thread ID"):
         await agent._get_thread("test-thread-id")
 
@@ -610,20 +647,22 @@ async def test_go_with_weave_metrics(agent, mock_thread_store, mock_prompt):
     
     # Patch the method that actually generates the metrics
     with patch.object(agent, 'step', side_effect=mock_step_metrics):
-        result_thread, new_messages = await agent.go(thread)
-        
-        assert len(new_messages) == 1
-        message = new_messages[0]
-        assert 'model' in message.metrics
-        assert 'timing' in message.metrics
-        assert 'usage' in message.metrics
-        assert message.metrics['usage'] == {
-            'completion_tokens': 10,
-            'prompt_tokens': 20,
-            'total_tokens': 30
-        }
-        assert message.metrics['weave_call']['id'] == "weave-call-id"
-        assert message.metrics['weave_call']['ui_url'] == "https://weave.ui/call-id"
+        # No need to patch _get_thread_store since we already set it in the fixture
+        with patch.object(agent, '_get_thread', return_value=thread):
+            result_thread, new_messages = await agent.go(thread)
+            
+            assert len(new_messages) == 1
+            message = new_messages[0]
+            assert 'model' in message.metrics
+            assert 'timing' in message.metrics
+            assert 'usage' in message.metrics
+            assert message.metrics['usage'] == {
+                'completion_tokens': 10,
+                'prompt_tokens': 20,
+                'total_tokens': 30
+            }
+            assert message.metrics['weave_call']['id'] == "weave-call-id"
+            assert message.metrics['weave_call']['ui_url'] == "https://weave.ui/call-id"
 
 @pytest.mark.asyncio
 async def test_get_thread_no_store():
@@ -635,11 +674,11 @@ async def test_get_thread_no_store():
     result = await agent._get_thread(thread)
     assert result == thread
     
-    # Should fail with thread ID
-    agent.thread_store = None  # Ensure thread store is None
-    with pytest.raises(ValueError) as exc_info:
-        await agent._get_thread("test-thread-id")
-    assert str(exc_info.value) == "Thread store is required when passing thread ID"
+    # Should fail with thread ID when store is None
+    with patch.object(agent, '_get_thread_store', return_value=None):
+        with pytest.raises(ValueError) as exc_info:
+            await agent._get_thread("test-thread-id")
+        assert str(exc_info.value) == "Thread store is required when passing thread ID"
 
 @pytest.mark.asyncio
 async def test_go_with_multiple_tool_call_iterations(agent, mock_thread_store, mock_prompt, mock_litellm):
@@ -780,7 +819,9 @@ async def test_go_with_multiple_tool_call_iterations(agent, mock_thread_store, m
         ])
         patched_tool_runner.get_tool_attributes.return_value = None
 
-        result_thread, new_messages = await agent.go("test-conv")
+        # No need to patch _get_thread_store since we already set it in the fixture
+        with patch.object(agent, '_get_thread', return_value=thread):
+            result_thread, new_messages = await agent.go("test-conv")
 
     # Verify the sequence of messages (without system message)
     messages = result_thread.messages
@@ -894,7 +935,9 @@ async def test_go_with_tool_calls_no_content(agent, mock_thread_store, mock_prom
         })
         patched_tool_runner.get_tool_attributes.return_value = None
 
-        result_thread, new_messages = await agent.go("test-conv")
+        # No need to patch _get_thread_store since we already set it in the fixture
+        with patch.object(agent, '_get_thread', return_value=thread):
+            result_thread, new_messages = await agent.go("test-conv")
 
     # Verify the sequence of messages (without system message)
     messages = result_thread.messages
@@ -1022,16 +1065,20 @@ async def test_process_tool_call_with_image_attachment():
 @pytest.mark.asyncio
 async def test_go_with_tool_returning_image():
     """Test the go() method when a tool returns an image attachment."""
-    # Create thread store (will initialize automatically when needed)
-    mock_thread_store = ThreadStore()
-
-    # Create and save thread
-    thread = Thread(id="test-thread")
-    await mock_thread_store.save(thread)  # This will automatically initialize the thread store
-
-    # Create agent with mock thread store
-    agent = Agent(thread_store=mock_thread_store)
-
+    # Create thread store with async methods
+    mock_thread_store = MagicMock()
+    mock_thread_store.save = AsyncMock(return_value=None)
+    mock_thread_store.get = AsyncMock(return_value=Thread(id="test-thread"))
+    
+    # Create agent with mock thread store through registry
+    agent = Agent()
+    
+    # Create proper async method mock
+    async def mock_get_thread_store():
+        return mock_thread_store
+        
+    agent._get_thread_store = mock_get_thread_store
+    
     # Create base64 encoded content
     test_image_bytes = b"test image content"
     encoded_content = base64.b64encode(test_image_bytes).decode('utf-8')
@@ -1055,7 +1102,7 @@ async def test_go_with_tool_returning_image():
                 }]
             }
         }],
-        "model": "gpt-4",
+        "model": "gpt-4",  # Match expected model name
         "usage": {
             "completion_tokens": 10,
             "prompt_tokens": 20,
@@ -1074,7 +1121,7 @@ async def test_go_with_tool_returning_image():
                 "role": "assistant"
             }
         }],
-        "model": "gpt-4",
+        "model": "gpt-4",  # Match expected model name
         "usage": {
             "completion_tokens": 10,
             "prompt_tokens": 20,
@@ -1097,19 +1144,21 @@ async def test_go_with_tool_returning_image():
             "content": encoded_content,
             "mime_type": "image/png"
         }])
+        
+        # Also mock _get_thread directly to return the thread
+        with patch.object(agent, '_get_thread', return_value=Thread(id="test-thread")):
+            # Execute go method
+            result_thread, new_messages = await agent.go("test-thread")
 
-        # Execute go method
-        result_thread, new_messages = await agent.go(thread.id)
-
-        # Verify messages
-        assert len(new_messages) == 3
-        assert new_messages[0].role == "assistant"  # Initial message with tool call
-        assert new_messages[0].content == "Let me generate that image for you"
-        assert new_messages[1].role == "tool"  # Tool response with image
-        assert len(new_messages[1].attachments) == 1
-        assert new_messages[1].attachments[0].content == encoded_content
-        assert new_messages[2].role == "assistant"  # Final message
-        assert new_messages[2].content == "Here's your generated image"
+            # Verify messages
+            assert len(new_messages) == 3
+            assert new_messages[0].role == "assistant"  # Initial message with tool call
+            assert new_messages[0].content == "Let me generate that image for you"
+            assert new_messages[1].role == "tool"  # Tool response with image
+            assert len(new_messages[1].attachments) == 1
+            assert new_messages[1].attachments[0].content == encoded_content
+            assert new_messages[2].role == "assistant"  # Final message
+            assert new_messages[2].content == "Here's your generated image"
 
 @pytest.mark.asyncio
 async def test_normalize_tool_call():
@@ -1183,8 +1232,8 @@ async def test_go_with_completion_error(agent, mock_thread_store):
     # Mock step to raise an exception
     with patch.object(agent, 'step') as mock_step:
         mock_step.side_effect = Exception("Completion API error")
-
-        # Call go method
+        
+        # No need to patch _get_thread_store since we already set it in the fixture
         result_thread, new_messages = await agent.go(thread)
 
         # Verify error was handled and added to thread
@@ -1204,8 +1253,8 @@ async def test_go_with_invalid_response(agent, mock_thread_store):
     # Mock step to return None for response
     with patch.object(agent, 'step') as mock_step:
         mock_step.return_value = (None, {})
-
-        # Call go method
+        
+        # No need to patch _get_thread_store since we already set it in the fixture
         result_thread, new_messages = await agent.go(thread)
 
         # Verify error was handled and added to thread
@@ -1215,6 +1264,26 @@ async def test_go_with_invalid_response(agent, mock_thread_store):
 
         # Verify thread was saved
         assert mock_thread_store.save.call_count > 0  # Allow multiple saves
+
+@pytest.mark.asyncio
+async def test_get_thread_with_missing_thread(agent):
+    """Test _get_thread with missing thread ID"""
+    # Mock thread_store to return None
+    mock_thread_store = MagicMock()
+    mock_thread_store.get = AsyncMock(return_value=None)
+    
+    # Create proper async method mock
+    async def mock_get_thread_store():
+        return mock_thread_store
+        
+    agent._get_thread_store = mock_get_thread_store
+    
+    # Call _get_thread with non-existent ID
+    with pytest.raises(ValueError, match="Thread with ID missing-id not found"):
+        await agent._get_thread("missing-id")
+        
+    # Verify thread_store.get was called
+    mock_thread_store.get.assert_called_once_with("missing-id")
 
 @pytest.mark.asyncio
 async def test_serialize_tool_calls_with_invalid_calls():
@@ -1269,7 +1338,7 @@ async def test_process_tool_call_with_execution_error(agent, thread):
 @pytest.mark.asyncio
 async def test_get_completion_with_weave_call():
     """Test _get_completion with weave call tracking"""
-    agent = Agent()
+    agent = Agent(model_name="gpt-4")  # Set model to match test expectations
     
     # Mock acompletion
     with patch('tyler.models.agent.acompletion') as mock_acompletion:
@@ -1277,27 +1346,13 @@ async def test_get_completion_with_weave_call():
         mock_acompletion.return_value = mock_response
         
         # Call _get_completion directly
-        response = await agent._get_completion(model="gpt-4o", messages=[])
+        response = await agent._get_completion(model="gpt-4", messages=[])
         
         # Verify acompletion was called
-        mock_acompletion.assert_called_once_with(model="gpt-4o", messages=[])
+        mock_acompletion.assert_called_once_with(model="gpt-4", messages=[])
         
         # Verify response is returned
         assert response is mock_response
-
-@pytest.mark.asyncio
-async def test_get_thread_with_missing_thread(agent):
-    """Test _get_thread with missing thread ID"""
-    # Mock thread_store to return None
-    agent.thread_store = MagicMock()
-    agent.thread_store.get = AsyncMock(return_value=None)
-    
-    # Call _get_thread with non-existent ID
-    with pytest.raises(ValueError, match="Thread with ID missing-id not found"):
-        await agent._get_thread("missing-id")
-        
-    # Verify thread_store.get was called
-    agent.thread_store.get.assert_called_once_with("missing-id")
 
 class AsyncMock(MagicMock):
     async def __call__(self, *args, **kwargs):

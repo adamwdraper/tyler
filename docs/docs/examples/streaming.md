@@ -8,9 +8,7 @@ Here's a complete example that shows how to use streaming responses with multipl
 
 ```python
 from dotenv import load_dotenv
-from tyler.models.agent import Agent, StreamUpdate
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler.models.agent import Agent, StreamUpdate, Thread, Message
 import asyncio
 import weave
 import os

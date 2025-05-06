@@ -9,6 +9,7 @@ import json
 import asyncio
 from functools import wraps
 from tyler.utils.logging import get_logger
+# Direct import
 from tyler.models.attachment import Attachment
 import base64
 

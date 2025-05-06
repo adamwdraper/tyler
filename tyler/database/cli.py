@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from pathlib import Path
 from tyler.utils.logging import get_logger
 import asyncio
+from alembic import command
+from alembic.config import Config
 
 # Get configured logger
 logger = get_logger(__name__)
@@ -114,6 +116,36 @@ def init(env_file, db_type, db_host, db_port, db_name, db_user, db_password, sql
         click.echo(f"Error initializing database: {str(e)}", err=True)
         raise click.Abort()
 
+def get_alembic_config():
+    """Get Alembic configuration"""
+    # Find the migrations directory within the tyler package
+    import tyler
+    package_dir = Path(tyler.__file__).parent
+    migrations_dir = package_dir / 'database' / 'migrations'
+    
+    if not migrations_dir.exists():
+        raise click.ClickException(f"Migrations directory not found: {migrations_dir}")
+    
+    # Set up Alembic config
+    alembic_ini = migrations_dir / 'alembic.ini'
+    if not alembic_ini.exists():
+        raise click.ClickException(f"alembic.ini not found in {migrations_dir}")
+    
+    alembic_cfg = Config(str(alembic_ini))
+    
+    # Set the script_location to the migrations directory
+    alembic_cfg.set_main_option('script_location', str(migrations_dir))
+    
+    # Get database URL
+    db_url = os.getenv('TYLER_DATABASE_URL')
+    if not db_url:
+        db_url = get_db_url()
+    
+    # Set the database URL in the Alembic config
+    alembic_cfg.set_main_option('sqlalchemy.url', db_url.replace('+asyncpg', '').replace('+aiosqlite', ''))
+    
+    return alembic_cfg
+
 @cli.command()
 def migrate():
     """Generate a new migration based on model changes."""
@@ -125,28 +157,63 @@ def migrate():
 @cli.command()
 def upgrade():
     """Upgrade database to latest version."""
-    alembic_cfg = get_alembic_config()
-    command.upgrade(alembic_cfg, "head")
-    click.echo("Database upgraded successfully")
+    try:
+        alembic_cfg = get_alembic_config()
+        command.upgrade(alembic_cfg, "head")
+        click.echo("Database upgraded successfully")
+    except Exception as e:
+        click.echo(f"Error upgrading database: {str(e)}", err=True)
+        raise click.Abort()
 
 @cli.command()
-def downgrade():
-    """Downgrade database by one version."""
-    alembic_cfg = get_alembic_config()
-    command.downgrade(alembic_cfg, "-1")
-    click.echo("Database downgraded successfully")
+@click.argument('revision', default="-1")
+def downgrade(revision):
+    """Downgrade database by one version or to specific revision."""
+    try:
+        alembic_cfg = get_alembic_config()
+        command.downgrade(alembic_cfg, revision)
+        click.echo("Database downgraded successfully")
+    except Exception as e:
+        click.echo(f"Error downgrading database: {str(e)}", err=True)
+        raise click.Abort()
 
 @cli.command()
 def history():
     """Show migration history."""
-    alembic_cfg = get_alembic_config()
-    command.history(alembic_cfg)
+    try:
+        alembic_cfg = get_alembic_config()
+        command.history(alembic_cfg)
+    except Exception as e:
+        click.echo(f"Error showing history: {str(e)}", err=True)
+        raise click.Abort()
 
 @cli.command()
 def current():
     """Show current database version."""
-    alembic_cfg = get_alembic_config()
-    command.current(alembic_cfg)
+    try:
+        alembic_cfg = get_alembic_config()
+        command.current(alembic_cfg)
+    except Exception as e:
+        click.echo(f"Error showing current version: {str(e)}", err=True)
+        raise click.Abort()
+
+@cli.command()
+@click.argument('revision', required=True)
+def stamp(revision):
+    """Set the revision in the database without running migrations.
+    
+    This is useful when you have already manually applied schema changes or
+    when you need to mark a migration as complete without running it.
+    
+    REVISION can be a specific revision ID or 'head' for the latest revision.
+    """
+    try:
+        alembic_cfg = get_alembic_config()
+        command.stamp(alembic_cfg, revision)
+        click.echo(f"Database stamped at revision: {revision}")
+    except Exception as e:
+        click.echo(f"Error stamping database: {str(e)}", err=True)
+        raise click.Abort()
 
 def main():
     cli() 

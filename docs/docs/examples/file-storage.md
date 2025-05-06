@@ -56,10 +56,7 @@ await file_store.delete(file_id, storage_path)
 The FileStore integrates seamlessly with the Attachment model:
 
 ```python
-from tyler.models.attachment import Attachment
-from tyler.models.message import Message
-from tyler.models.thread import Thread
-from tyler.database.thread_store import ThreadStore
+from tyler import Attachment, Message, Thread, ThreadStore
 
 # Create an attachment
 attachment = Attachment(

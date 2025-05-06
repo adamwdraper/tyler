@@ -5,13 +5,9 @@ import tempfile
 from datetime import datetime, UTC
 from sqlalchemy import select, text
 from sqlalchemy.orm import selectinload
-from tyler.database.thread_store import ThreadStore
-from tyler.database.models import ThreadRecord
+from tyler import Thread, Message, Attachment, ThreadStore
 from tyler.database.storage_backend import MemoryBackend, SQLBackend
-from tyler.models.thread import Thread
-from tyler.models.message import Message
 from tyler.database.models import Base
-from tyler.models.attachment import Attachment
 
 pytest_plugins = ('pytest_asyncio',)
 
@@ -223,19 +219,19 @@ async def test_find_by_attributes(thread_store):
     assert results[0].id == "thread-1"
 
 @pytest.mark.asyncio
-async def test_find_by_source(thread_store):
-    """Test finding threads by source"""
-    # Create threads with different sources
+async def test_find_by_platform(thread_store):
+    """Test finding threads by platform"""
+    # Create threads with different platforms
     thread1 = Thread(id="thread-1", title="Thread 1")
-    thread1.source = {"name": "slack", "channel": "general"}
+    thread1.platforms = {"slack": {"channel": "general"}}
     await thread_store.save(thread1)
     
     thread2 = Thread(id="thread-2", title="Thread 2")
-    thread2.source = {"name": "notion", "page_id": "123"}
+    thread2.platforms = {"notion": {"page_id": "123"}}
     await thread_store.save(thread2)
     
-    # Search by source using the ThreadStore API
-    results = await thread_store.find_by_source("slack", {})
+    # Search by platform using the ThreadStore API
+    results = await thread_store.find_by_platform("slack", {})
     
     assert len(results) == 1
     assert results[0].id == "thread-1"
@@ -563,7 +559,7 @@ async def test_save_thread_partial_attachment_failure(thread_store):
     assert retrieved_thread is None
     
     # Verify the file was cleaned up from storage
-    from tyler.storage.file_store import FileStore
+    from tyler import FileStore
     store = FileStore()
     files = await store.list_files()
     assert not any(f.endswith("good.txt") for f in files)
@@ -630,7 +626,7 @@ async def test_save_thread_database_failure_keeps_attachments(thread_store, monk
         assert "Database error" in str(exc_info.value)
     
     # Verify attachment files still exist (weren't cleaned up)
-    from tyler.storage.file_store import FileStore
+    from tyler import FileStore
     store = FileStore()
     files = await store.list_files()
     assert any(attachment.file_id in f for f in files), f"Expected to find file ID {attachment.file_id} in {files}"
@@ -702,4 +698,73 @@ async def test_system_prompt_preserved_in_memory():
     
     # But the original thread object should still have its system message
     assert has_system_message, "Original thread should have system message"
-    assert any(msg.role == "system" for msg in thread.messages), "Original thread should still have system message after save" 
+    assert any(msg.role == "system" for msg in thread.messages), "Original thread should still have system message after save"
+
+@pytest.mark.asyncio
+async def test_reaction_persistence():
+    """Test that message reactions are correctly saved and loaded"""
+    # Create an in-memory thread store for testing
+    thread_store = await ThreadStore.create()
+    
+    # Create a thread with messages
+    thread = Thread(id="test-reaction-thread", title="Reaction Test")
+    
+    # Add messages
+    msg1 = Message(role="user", content="Hello")
+    msg2 = Message(role="assistant", content="Hi there!")
+    
+    thread.add_message(msg1)
+    thread.add_message(msg2)
+    
+    # Add reactions to messages
+    thread.add_reaction(msg1.id, ":thumbsup:", "user1")
+    thread.add_reaction(msg1.id, ":thumbsup:", "user2")
+    thread.add_reaction(msg1.id, ":heart:", "user1")
+    thread.add_reaction(msg2.id, ":rocket:", "user3")
+    
+    # Save thread to storage
+    await thread_store.save(thread)
+    
+    # Retrieve thread from storage
+    retrieved_thread = await thread_store.get("test-reaction-thread")
+    
+    # Verify thread was retrieved
+    assert retrieved_thread is not None
+    assert retrieved_thread.id == "test-reaction-thread"
+    assert len(retrieved_thread.messages) == 2
+    
+    # Find the retrieved messages by comparing content
+    retrieved_msg1 = next((m for m in retrieved_thread.messages if m.content == "Hello"), None)
+    retrieved_msg2 = next((m for m in retrieved_thread.messages if m.content == "Hi there!"), None)
+    
+    assert retrieved_msg1 is not None
+    assert retrieved_msg2 is not None
+    
+    # Verify reactions were saved and loaded correctly
+    assert len(retrieved_msg1.reactions) == 2
+    assert len(retrieved_msg1.reactions[":thumbsup:"]) == 2
+    assert len(retrieved_msg1.reactions[":heart:"]) == 1
+    assert "user1" in retrieved_msg1.reactions[":thumbsup:"]
+    assert "user2" in retrieved_msg1.reactions[":thumbsup:"]
+    assert "user1" in retrieved_msg1.reactions[":heart:"]
+    
+    assert len(retrieved_msg2.reactions) == 1
+    assert len(retrieved_msg2.reactions[":rocket:"]) == 1
+    assert "user3" in retrieved_msg2.reactions[":rocket:"]
+    
+    # Test modifying reactions on the retrieved thread
+    retrieved_thread.add_reaction(retrieved_msg1.id, ":smile:", "user4")
+    retrieved_thread.remove_reaction(retrieved_msg1.id, ":heart:", "user1")
+    
+    # Save the modified thread
+    await thread_store.save(retrieved_thread)
+    
+    # Retrieve again and verify changes
+    modified_thread = await thread_store.get("test-reaction-thread")
+    modified_msg1 = next((m for m in modified_thread.messages if m.content == "Hello"), None)
+    
+    assert modified_msg1 is not None
+    assert len(modified_msg1.reactions) == 2  # Still 2 reaction types (thumbsup and smile, heart removed)
+    assert ":heart:" not in modified_msg1.reactions
+    assert ":smile:" in modified_msg1.reactions
+    assert "user4" in modified_msg1.reactions[":smile:"] 

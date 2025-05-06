@@ -22,7 +22,7 @@ The `Agent` class is the central component of Tyler. It:
 ### Basic usage
 
 ```python
-from tyler.models.agent import Agent
+from tyler import Agent
 
 agent = Agent(
     model_name="gpt-4o",
@@ -109,7 +109,7 @@ Threads represent conversations and maintain:
 ### Creating threads
 
 ```python
-from tyler.models.thread import Thread
+from tyler import Thread
 
 # Basic thread
 thread = Thread()
@@ -202,7 +202,7 @@ Messages are the basic units of conversation. They contain:
 ### Creating messages
 
 ```python
-from tyler.models.message import Message
+from tyler import Message
 
 # Basic text message
 message = Message(
@@ -320,7 +320,7 @@ Attachments handle files in conversations:
 ### Creating attachments
 
 ```python
-from tyler.models.attachment import Attachment
+from tyler import Attachment
 
 # From binary content
 attachment = Attachment(
@@ -425,7 +425,7 @@ from tyler.tools import (
 ### Using Built-in Tools
 
 ```python
-from tyler.models.agent import Agent
+from tyler import Agent
 
 # Use specific tool modules
 agent = Agent(
@@ -620,7 +620,7 @@ Thread storage handles conversation persistence and retrieval through a unified 
 
 ```python
 # Factory pattern for thread store creation
-from tyler.database.thread_store import ThreadStore
+from tyler import ThreadStore
 
 # In-memory storage
 store = await ThreadStore.create()  # Connects immediately, validates configuration
@@ -704,7 +704,7 @@ threads = await store.find_by_source(
 Tyler provides a unified `FileStore` class for file storage and retrieval. Files are automatically stored and processed when attached to messages.
 
 ```python
-from tyler.storage.file_store import FileStore
+from tyler import FileStore
 
 # Create a file store instance with factory pattern (validates settings immediately)
 file_store = await FileStore.create(
@@ -890,7 +890,7 @@ Tyler supports multiple MCP transport protocols:
 MCP tools can be used with Tyler agents:
 
 ```python
-from tyler.models.agent import Agent
+from tyler import Agent
 
 # Create agent with MCP tools
 agent = Agent(

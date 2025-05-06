@@ -9,9 +9,7 @@ os.environ["OPENAI_API_KEY"] = "dummy"
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from tyler.utils.agent_runner import AgentRunner, agent_runner
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message
 
 @pytest.fixture
 def mock_agent():

@@ -6,9 +6,7 @@ a main coordinator agent which can delegate tasks to them.
 """
 import asyncio
 import os
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message
 from tyler.utils.agent_runner import agent_runner
 from tyler.utils.logging import get_logger
 import weave

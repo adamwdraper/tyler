@@ -7,6 +7,7 @@ import asyncio
 import weave
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, UTC
+# Direct imports
 from tyler.models.thread import Thread
 from tyler.models.message import Message
 from tyler.utils.logging import get_logger

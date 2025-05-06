@@ -9,12 +9,9 @@ os.environ["OPENAI_API_KEY"] = "dummy"
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock, call
 import json
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message, ThreadStore
 from tyler.utils.agent_runner import agent_runner
 from tyler.utils.tool_runner import tool_runner
-from tyler.database.thread_store import ThreadStore
 import types
 import asyncio
 

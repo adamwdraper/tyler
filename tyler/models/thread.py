@@ -15,7 +15,10 @@ class Thread(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     attributes: Dict = Field(default_factory=dict)
-    source: Optional[Dict[str, Any]] = None  # {"name": "slack", "thread_id": "..."}
+    platforms: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description="References to where this thread exists on external platforms. Maps platform name to platform-specific identifiers."
+    )
     
     model_config = {
         "json_schema_extra": {
@@ -27,10 +30,11 @@ class Thread(BaseModel):
                     "created_at": "2024-02-07T00:00:00+00:00",
                     "updated_at": "2024-02-07T00:00:00+00:00",
                     "attributes": {},
-                    "source": {
-                        "name": "slack",
+                    "platforms": {
+                        "slack": {
                         "channel": "C123",
                         "thread_ts": "1234567890.123"
+                        }
                     }
                 }
             ]
@@ -59,7 +63,7 @@ class Thread(BaseModel):
             "created_at": self.created_at.isoformat() if mode == "json" else self.created_at,
             "updated_at": self.updated_at.isoformat() if mode == "json" else self.updated_at,
             "attributes": self.attributes,
-            "source": self.source
+            "platforms": self.platforms
         }
     
     def add_message(self, message: Message) -> None:
@@ -294,3 +298,59 @@ class Thread(BaseModel):
     def get_messages_in_sequence(self) -> List[Message]:
         """Get messages sorted by sequence number"""
         return sorted(self.messages, key=lambda m: m.sequence if m.sequence is not None else float('inf'))
+
+    def get_message_by_id(self, message_id: str) -> Optional[Message]:
+        """Return the message with the specified ID, or None if no message exists with that ID"""
+        for message in self.messages:
+            if message.id == message_id:
+                return message
+        return None
+
+    def add_reaction(self, message_id: str, emoji: str, user_id: str) -> bool:
+        """Add a reaction to a message in the thread
+        
+        Args:
+            message_id: ID of the message to react to
+            emoji: Emoji shortcode (e.g., ":thumbsup:")
+            user_id: ID of the user adding the reaction
+            
+        Returns:
+            True if reaction was added, False if it wasn't (message not found or already reacted)
+        """
+        message = self.get_message_by_id(message_id)
+        if not message:
+            return False
+            
+        return message.add_reaction(emoji, user_id)
+    
+    def remove_reaction(self, message_id: str, emoji: str, user_id: str) -> bool:
+        """Remove a reaction from a message in the thread
+        
+        Args:
+            message_id: ID of the message to remove reaction from
+            emoji: Emoji shortcode (e.g., ":thumbsup:")
+            user_id: ID of the user removing the reaction
+            
+        Returns:
+            True if reaction was removed, False if it wasn't (message or reaction not found)
+        """
+        message = self.get_message_by_id(message_id)
+        if not message:
+            return False
+            
+        return message.remove_reaction(emoji, user_id)
+    
+    def get_reactions(self, message_id: str) -> Dict[str, List[str]]:
+        """Get all reactions for a message in the thread
+        
+        Args:
+            message_id: ID of the message to get reactions for
+            
+        Returns:
+            Dictionary mapping emoji to list of user IDs, or empty dict if message not found
+        """
+        message = self.get_message_by_id(message_id)
+        if not message:
+            return {}
+            
+        return message.get_reactions()
