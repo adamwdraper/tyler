@@ -46,9 +46,12 @@ class AgentPrompt(Prompt):
 
 Current date: {current_date}
                                  
-Your purpose is: {purpose}
+Your purpose is: 
+```
+{purpose}
+```
 
-Some are some relevant notes to help you accomplish your purpose:
+Here are some relevant notes to help you accomplish your purpose:
 ```
 {notes}
 ```
@@ -57,6 +60,11 @@ Based on the user's input, follow this routine:
 1. If the user makes a statement or shares information, respond appropriately with acknowledgment.
 2. If the user's request is vague, incomplete, or missing information needed to complete the task, use the relevant notes to understand the user's request. If you don't find an answer in the notes, ask probing questions to understand the user's request deeper. You can ask a maximum of 3 probing questions.
 3. If the request requires gathering information or performing actions beyond your knowledge you can use the tools available to you.
+
+**AVAILABLE TOOLS:**
+
+You have access to the following tools:
+{tools_description}
 
 **IMPORTANT INSTRUCTION ABOUT USING TOOLS:**
 
@@ -101,12 +109,24 @@ This ensures the user can access the file correctly.
 """)
 
     @weave.op()
-    def system_prompt(self, purpose: str, name: str, model_name: str, notes: str = "") -> str:
+    def system_prompt(self, purpose: str, name: str, model_name: str, tools: List[Dict], notes: str = "") -> str:
+        # Format tools description
+        tools_description_lines = []
+        for tool in tools:
+            if tool.get('type') == 'function' and 'function' in tool:
+                tool_func = tool['function']
+                tool_name = tool_func.get('name', 'N/A')
+                description = tool_func.get('description', 'No description available.')
+                tools_description_lines.append(f"- `{tool_name}`: {description}")
+        
+        tools_description_str = "\n".join(tools_description_lines) if tools_description_lines else "No tools available."
+
         return self.system_template.format(
             current_date=datetime.now().strftime("%Y-%m-%d %A"),
             purpose=purpose,
             name=name,
             model_name=model_name,
+            tools_description=tools_description_str,
             notes=notes
         )
 
@@ -140,9 +160,8 @@ class Agent(Model):
         
         # Generate system prompt once at initialization
         self._prompt = AgentPrompt()
-        self._system_prompt = self._prompt.system_prompt(self.purpose, self.name, self.model_name, self.notes)
         
-        # Load tools
+        # Load tools first as they are needed for the system prompt
         self._processed_tools = []
         for tool in self.tools:
             if isinstance(tool, str):
@@ -222,6 +241,15 @@ class Agent(Model):
                 )
                 
                 logger.info(f"Registered agent tool: delegate_to_{agent.name}")
+
+        # Now generate the system prompt including the tools
+        self._system_prompt = self._prompt.system_prompt(
+            self.purpose, 
+            self.name, 
+            self.model_name, 
+            self._processed_tools, 
+            self.notes
+        )
 
     def set_stores(self, thread_store_name: str = "default", file_store_name: str = "default") -> "Agent":
         """Configure the agent with specific thread and file stores from the registry.
