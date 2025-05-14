@@ -77,7 +77,7 @@ custom_translator_tool = {
 
 # Initialize the agent
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with translations and web searches",
     tools=[
         "web",                     # Load the web tools module

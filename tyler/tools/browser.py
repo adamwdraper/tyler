@@ -19,7 +19,7 @@ load_dotenv()
 @weave.op(name="browser-automate")
 async def browser_automate(*, 
                           task: str, 
-                          model: str = "gpt-4o",
+                          model: str = "gpt-4.1",
                           headless: bool = False,  # Default to non-headless mode so users can see the browser
                           timeout: int = 300) -> Dict[str, Any]:
     """
@@ -27,7 +27,7 @@ async def browser_automate(*,
     
     Args:
         task (str): The task to perform in natural language (e.g., "Go to google.com and search for Browser Use")
-        model (str): The model to use for the browser agent (default: "gpt-4o")
+        model (str): The model to use for the browser agent (default: "gpt-4.1")
         headless (bool): Whether to run the browser in headless mode (default: False)
         timeout (int): Maximum time in seconds to run the task (default: 300)
         
@@ -124,7 +124,7 @@ async def browser_screenshot(*,
         task = f"Go to {url} and take a {'full page' if full_page else 'viewport'} screenshot"
         
         # Initialize the browser agent
-        llm = ChatOpenAI(model="gpt-4o")
+        llm = ChatOpenAI(model="gpt-4.1")
         
         agent = BrowserAgent(
             task=task,
@@ -184,7 +184,7 @@ TOOLS = [
                         },
                         "model": {
                             "type": "string",
-                            "description": "The model to use for the browser agent (default: 'gpt-4o')"
+                            "description": "The model to use for the browser agent (default: 'gpt-4.1')"
                         },
                         "headless": {
                             "type": "boolean",

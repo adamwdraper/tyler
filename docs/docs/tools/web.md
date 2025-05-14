@@ -36,7 +36,7 @@ from tyler.models import Agent, Thread, Message
 
 # Create an agent with web tools
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with web content",
     tools=["web"]
 )

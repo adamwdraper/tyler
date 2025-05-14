@@ -36,7 +36,7 @@ thread_store = ThreadStore()
 async def init():
     # Initialize the agent with files tools and thread store
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To help extract and analyze content from PDF files.",
         tools=["files"],  # Use the files module
         temperature=0.7,

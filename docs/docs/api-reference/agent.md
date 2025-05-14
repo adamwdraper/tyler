@@ -12,7 +12,7 @@ The `Agent` class is the core component of Tyler, responsible for managing conve
 from tyler import Agent
 
 agent = Agent(
-    model_name: str = "gpt-4o",
+    model_name: str = "gpt-4.1",
     temperature: float = 0.7,
     name: str = "Tyler",
     purpose: str = "To be a helpful assistant.",
@@ -29,7 +29,7 @@ agent = Agent(
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `model_name` | str | No | "gpt-4o" | The LLM model to use |
+| `model_name` | str | No | "gpt-4.1" | The LLM model to use |
 | `temperature` | float | No | 0.7 | Response creativity (0.0-1.0) |
 | `name` | str | No | "Tyler" | Name of the agent |
 | `purpose` | str | No | "To be a helpful assistant." | The agent's purpose or role |

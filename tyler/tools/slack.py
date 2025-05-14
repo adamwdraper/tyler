@@ -90,7 +90,7 @@ async def generate_slack_blocks(*, content: str) -> dict:
     try:
         # Use the async version of litellm.completion
         response = await litellm.acompletion(
-            model="gpt-4o",
+            model="gpt-4.1",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
             response_format={"type": "json_object"}

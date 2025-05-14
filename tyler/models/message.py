@@ -466,7 +466,7 @@ class Message(BaseModel):
                         }
                     ],
                     "metrics": {
-                        "model": "gpt-4o",
+                        "model": "gpt-4.1",
                         "timing": {
                             "started_at": "2024-02-07T00:00:00+00:00",
                             "ended_at": "2024-02-07T00:00:01+00:00",

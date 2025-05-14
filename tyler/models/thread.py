@@ -104,7 +104,7 @@ class Thread(BaseModel):
         
     @weave.op()
     def generate_title(self) -> str:
-        """Generate a concise title for the thread using GPT-4o"""
+        """Generate a concise title for the thread using GPT-4.1"""
         if not self.messages:
             return "Empty Thread"
         
@@ -121,7 +121,7 @@ class Thread(BaseModel):
         ]
         
         response = completion(
-            model="gpt-4o",
+            model="gpt-4.1",
             messages=messages,
             temperature=0.7,
             max_tokens=50

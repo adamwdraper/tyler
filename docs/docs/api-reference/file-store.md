@@ -27,7 +27,7 @@ file_store = await FileStore.create()
 from tyler import Agent
 
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with tasks",
     thread_store=thread_store,
     file_store=file_store  # Explicitly pass file_store instance

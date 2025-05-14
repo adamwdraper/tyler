@@ -30,7 +30,7 @@ from tyler import Agent, Thread, Message
 
 # Create an agent
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with tasks"
 )
 

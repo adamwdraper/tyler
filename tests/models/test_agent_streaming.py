@@ -59,7 +59,7 @@ def mock_litellm():
 def agent(mock_litellm):
     with patch('tyler.models.agent.tool_runner', create_autospec(tool_runner)):
         agent = Agent(
-            model_name="gpt-4o",
+            model_name="gpt-4.1",
             temperature=0.7,
             purpose="test purpose",
             stream=True
@@ -243,7 +243,7 @@ async def test_go_stream_invalid_json_handling():
 @pytest.mark.asyncio
 async def test_go_stream_metrics_tracking():
     """Test that metrics are properly tracked in streaming mode"""
-    agent = Agent(stream=True, model_name="gpt-4o")
+    agent = Agent(stream=True, model_name="gpt-4.1")
     thread = Thread()
     thread.add_message(Message(role="user", content="Test metrics"))
     
@@ -276,7 +276,7 @@ async def test_go_stream_metrics_tracking():
         
         # Verify metrics are present and correct
         assert "metrics" in assistant_message.model_dump()
-        assert assistant_message.metrics["model"] == "gpt-4o"
+        assert assistant_message.metrics["model"] == "gpt-4.1"
         assert "timing" in assistant_message.metrics
         assert "started_at" in assistant_message.metrics["timing"]
         assert "ended_at" in assistant_message.metrics["timing"]
@@ -292,7 +292,7 @@ async def test_go_stream_metrics_tracking():
 @pytest.mark.asyncio
 async def test_go_stream_tool_metrics():
     """Test that tool execution metrics are tracked in streaming mode"""
-    agent = Agent(stream=True, model_name="gpt-4o")
+    agent = Agent(stream=True, model_name="gpt-4.1")
     thread = Thread()
     thread.add_message(Message(role="user", content="Test tool metrics"))
     
@@ -346,7 +346,7 @@ async def test_go_stream_tool_metrics():
 @pytest.mark.asyncio
 async def test_go_stream_multiple_messages_metrics():
     """Test metrics tracking across multiple messages in streaming mode"""
-    agent = Agent(stream=True, model_name="gpt-4o")
+    agent = Agent(stream=True, model_name="gpt-4.1")
     thread = Thread()
     thread.add_message(Message(role="user", content="Test multiple messages"))
     
@@ -401,7 +401,7 @@ async def test_go_stream_multiple_messages_metrics():
             assert "metrics" in message.model_dump()
             # Only check model name for assistant messages
             if message.role == "assistant":
-                assert message.metrics["model"] == "gpt-4o"
+                assert message.metrics["model"] == "gpt-4.1"
             assert "timing" in message.metrics
             
             if message.role == "assistant":

@@ -82,7 +82,7 @@ tyler-chat
 With custom configuration:
 
 ```bash
-tyler-chat --model gpt-4o --purpose "Technical support"
+tyler-chat --model gpt-4.1 --purpose "Technical support"
 ```
 
 ### Available commands

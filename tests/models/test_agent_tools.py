@@ -8,7 +8,7 @@ async def test_agent_loads_individual_tools():
     """Test that agent correctly loads tools when specifying individual modules"""
     # Test loading just web tools
     agent_web = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="test",
         tools=["web"]
     )
@@ -19,7 +19,7 @@ async def test_agent_loads_individual_tools():
     
     # Test loading just slack tools
     agent_slack = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="test",
         tools=["slack"]
     )
@@ -32,7 +32,7 @@ async def test_agent_loads_individual_tools():
 async def test_agent_loads_multiple_tool_modules():
     """Test that agent correctly loads tools when specifying multiple modules"""
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="test",
         tools=["web", "slack"]
     )
@@ -52,7 +52,7 @@ async def test_agent_loads_multiple_tool_modules():
 async def test_agent_loads_no_tools_by_default():
     """Test that agent loads no tools when none are specified"""
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="test"
     )
     
@@ -62,7 +62,7 @@ async def test_agent_loads_no_tools_by_default():
 async def test_agent_tool_functionality():
     """Test that loaded tools are actually functional"""
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="test",
         tools=["web"]
     )
@@ -106,7 +106,7 @@ async def test_agent_with_custom_tool():
     
     # Create agent with custom tool
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="test",
         tools=[custom_tool]
     )
@@ -128,7 +128,7 @@ async def test_agent_with_invalid_tool_type():
     # Try to create agent with invalid tool type (not string or dict)
     with pytest.raises(ValueError) as excinfo:
         Agent(
-            model_name="gpt-4o",
+            model_name="gpt-4.1",
             purpose="test",
             tools=[123]  # Invalid tool type
         )
@@ -142,7 +142,7 @@ async def test_agent_with_missing_tool_module():
     # Try to create agent with non-existent tool module
     with pytest.raises(ValueError) as excinfo:
         Agent(
-            model_name="gpt-4o",
+            model_name="gpt-4.1",
             purpose="test",
             tools=["non_existent_module"]  # Non-existent module
         )
@@ -168,7 +168,7 @@ async def test_agent_with_custom_tool_missing_keys():
     # Try to create agent with invalid tool
     with pytest.raises(ValueError, match="Custom tools must have 'definition' and 'implementation' keys"):
         Agent(
-            model_name="gpt-4o",
+            model_name="gpt-4.1",
             purpose="test",
             tools=[invalid_tool]
         )
@@ -201,7 +201,7 @@ async def test_agent_with_multiple_custom_tools():
     
     # Create agent with multiple custom tools
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="test",
         tools=[custom_tool1, custom_tool2]
     )
@@ -232,7 +232,7 @@ async def test_agent_with_mixed_tools():
     
     # Create agent with both built-in and custom tools
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="test",
         tools=["web", custom_tool]  # Mix of string and dict
     )
@@ -261,7 +261,7 @@ async def test_agent_with_selective_tools():
     
     # Create agent with only specific web tools
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="test",
         tools=[f"web:{first_tool},{second_tool}"]  # Only select specific tools
     )
@@ -284,7 +284,7 @@ async def test_agent_with_mixed_selective_tools():
     """Test that agent correctly processes mixed selective and full module loading"""
     # Create agent with a mix of selective tools and full modules
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="test",
         tools=[
             "web",  # All web tools

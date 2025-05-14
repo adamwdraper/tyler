@@ -43,7 +43,7 @@ async def example_basic_attachment():
     
     # Create agent with thread store
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To help analyze documents",
         thread_store=thread_store
     )
@@ -88,7 +88,7 @@ async def example_multiple_attachments():
     thread_store = ThreadStore()
     
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         thread_store=thread_store
     )
     
@@ -138,7 +138,7 @@ async def example_attachment_processing():
     thread_store = ThreadStore()
     
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         thread_store=thread_store
     )
 
@@ -153,7 +153,7 @@ async def image_attachment_example():
     
     # Create agent with thread store and vision capability
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To analyze images",
         thread_store=thread_store
     )
@@ -201,7 +201,7 @@ async def audio_attachment_example():
     
     # Create agent with thread store
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To transcribe and analyze audio",
         thread_store=thread_store
     )

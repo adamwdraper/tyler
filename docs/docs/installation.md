@@ -78,7 +78,7 @@ import asyncio
 
 async def test_installation():
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To test the installation"
     )
     thread = Thread()

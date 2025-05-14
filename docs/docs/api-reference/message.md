@@ -599,7 +599,7 @@ Ensures the source field has the correct structure with valid entity type if pre
    ```python
    # Update metrics after processing
    message.metrics.update({
-       "model": "gpt-4o",
+       "model": "gpt-4.1",
        "timing": {
            "started_at": start_time,
            "ended_at": end_time,

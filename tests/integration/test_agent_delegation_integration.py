@@ -66,7 +66,7 @@ def create_tool_call_response(tool_calls):
     # Add choice to response
     response.choices = [choice]
     response.id = "test-id"
-    response.model = "gpt-4o"
+    response.model = "gpt-4.1"
     
     # Add usage
     response.usage = types.SimpleNamespace()
@@ -95,7 +95,7 @@ def create_assistant_response(content):
     # Add choice to response
     response.choices = [choice]
     response.id = "test-id"
-    response.model = "gpt-4o"
+    response.model = "gpt-4.1"
     
     # Add usage
     response.usage = types.SimpleNamespace()
@@ -111,21 +111,21 @@ async def test_parallel_agent_delegation(mock_thread_store):
     # Create specialized agents
     research_agent = Agent(
         name="Research",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Research purpose",
         thread_store=mock_thread_store
     )
     
     code_agent = Agent(
         name="Code",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Code purpose",
         thread_store=mock_thread_store
     )
     
     creative_agent = Agent(
         name="Creative",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Creative purpose",
         thread_store=mock_thread_store
     )
@@ -133,7 +133,7 @@ async def test_parallel_agent_delegation(mock_thread_store):
     # Create coordinator agent
     coordinator_agent = Agent(
         name="Coordinator",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Coordination purpose",
         agents=[research_agent, code_agent, creative_agent],
         thread_store=mock_thread_store
@@ -249,14 +249,14 @@ async def test_agent_delegation_error_handling(mock_thread_store):
     # Create agents
     failing_agent = Agent(
         name="FailingAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Agent that will fail",
         thread_store=mock_thread_store
     )
     
     working_agent = Agent(
         name="WorkingAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Agent that works correctly",
         thread_store=mock_thread_store
     )
@@ -264,7 +264,7 @@ async def test_agent_delegation_error_handling(mock_thread_store):
     # Create coordinator agent
     coordinator_agent = Agent(
         name="ErrorHandlingCoordinator",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Coordinator that handles errors",
         agents=[failing_agent, working_agent],
         thread_store=mock_thread_store

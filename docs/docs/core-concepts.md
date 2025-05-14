@@ -10,7 +10,7 @@ This guide explains the core concepts and components that make up Tyler's archit
 
 The `Agent` class is the central component of Tyler. It:
 - Manages conversations through threads
-- Processes messages using LLMs (with GPT-4o as default)
+- Processes messages using LLMs (with GPT-4.1 as default)
 - Executes tools when needed
 - Maintains conversation state
 - Supports streaming responses
@@ -25,7 +25,7 @@ The `Agent` class is the central component of Tyler. It:
 from tyler import Agent
 
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     temperature=0.7,
     purpose="To help with tasks",
     tools=["web", "slack", "notion"]
@@ -265,7 +265,7 @@ Messages automatically track various metrics:
 ```python
 # Message metrics structure
 message.metrics = {
-    "model": "gpt-4o",          # Model used for generation
+    "model": "gpt-4.1",          # Model used for generation
     "timing": {
         "started_at": "2024-02-26T12:00:00Z",
         "ended_at": "2024-02-26T12:00:01Z",
@@ -718,7 +718,7 @@ file_store = await FileStore.create()
 
 # Pass file_store to Agent
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with tasks",
     thread_store=thread_store,
     file_store=file_store  # Explicitly pass file_store instance
@@ -894,7 +894,7 @@ from tyler import Agent
 
 # Create agent with MCP tools
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     tools=["mcp"],
     config={
         "mcp": {

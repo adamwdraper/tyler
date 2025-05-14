@@ -71,7 +71,7 @@ from tyler.models import Agent, Thread, Message
 
 # Create an agent with Notion tools
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with Notion content",
     tools=["notion"]
 )

@@ -288,7 +288,7 @@ def test_get_total_tokens():
         role="user",
         content="Hello",
         metrics={
-            "model": "gpt-4o",
+            "model": "gpt-4.1",
             "usage": {
                 "completion_tokens": 10,
                 "prompt_tokens": 5,
@@ -300,7 +300,7 @@ def test_get_total_tokens():
         role="assistant",
         content="Hi there!",
         metrics={
-            "model": "gpt-4o",
+            "model": "gpt-4.1",
             "usage": {
                 "completion_tokens": 20,
                 "prompt_tokens": 15,
@@ -317,10 +317,10 @@ def test_get_total_tokens():
     assert token_usage["overall"]["prompt_tokens"] == 20
     assert token_usage["overall"]["total_tokens"] == 50
     
-    assert "gpt-4o" in token_usage["by_model"]
-    assert token_usage["by_model"]["gpt-4o"]["completion_tokens"] == 30
-    assert token_usage["by_model"]["gpt-4o"]["prompt_tokens"] == 20
-    assert token_usage["by_model"]["gpt-4o"]["total_tokens"] == 50
+    assert "gpt-4.1" in token_usage["by_model"]
+    assert token_usage["by_model"]["gpt-4.1"]["completion_tokens"] == 30
+    assert token_usage["by_model"]["gpt-4.1"]["prompt_tokens"] == 20
+    assert token_usage["by_model"]["gpt-4.1"]["total_tokens"] == 50
 
 def test_get_model_usage():
     """Test getting model usage statistics"""
@@ -331,7 +331,7 @@ def test_get_model_usage():
         role="user",
         content="Hello",
         metrics={
-            "model": "gpt-4o",
+            "model": "gpt-4.1",
             "usage": {
                 "completion_tokens": 10,
                 "prompt_tokens": 5,
@@ -357,13 +357,13 @@ def test_get_model_usage():
     
     # Test getting all model usage
     all_usage = thread.get_model_usage()
-    assert "gpt-4o" in all_usage
+    assert "gpt-4.1" in all_usage
     assert "gpt-3.5-turbo" in all_usage
-    assert all_usage["gpt-4o"]["calls"] == 1
+    assert all_usage["gpt-4.1"]["calls"] == 1
     assert all_usage["gpt-3.5-turbo"]["calls"] == 1
     
     # Test getting specific model usage
-    gpt4_usage = thread.get_model_usage("gpt-4o")
+    gpt4_usage = thread.get_model_usage("gpt-4.1")
     assert gpt4_usage["calls"] == 1
     assert gpt4_usage["completion_tokens"] == 10
     assert gpt4_usage["prompt_tokens"] == 5
@@ -496,7 +496,7 @@ def test_thread_with_weave_metrics():
         role="assistant",
         content="Hello",
         metrics={
-            "model": "gpt-4o",
+            "model": "gpt-4.1",
             "usage": {
                 "completion_tokens": 10,
                 "prompt_tokens": 5,

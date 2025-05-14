@@ -25,7 +25,7 @@ async def main():
     agent = Agent(
         name="StoreAwareAssistant",
         purpose="Answer questions concisely using explicitly set stores.",
-        model_name="gpt-4o" # Using preferred model
+        model_name="gpt-4.1" # Using preferred model
     )
     print(f"Initialized agent: {agent.name}")
 

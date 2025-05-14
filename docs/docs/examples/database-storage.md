@@ -50,7 +50,7 @@ async def main():
     
     # Create agent with database storage
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To help with general questions",
         thread_store=store
     )
@@ -107,7 +107,7 @@ print(f"Initialized file store at: {file_store.base_path}")
 ### 3. Agent Configuration
 ```python
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with general questions",
     thread_store=store
 )
@@ -300,7 +300,7 @@ Database storage offers several advantages over in-memory storage:
 
 Message metrics:
 - Tokens: 128 completion, 84 prompt
-- Model: gpt-4o
+- Model: gpt-4.1
 - Latency: 450ms
 ```
 

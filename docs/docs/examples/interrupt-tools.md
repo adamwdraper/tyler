@@ -75,7 +75,7 @@ harmful_content_review = {
 async def main():
     # Initialize the agent with web tools and our custom interrupt tool
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To help fetch and analyze web content while detecting harmful requests.",
         tools=[
             "web",  # Include the web tools module
@@ -154,7 +154,7 @@ Defines an interrupt tool with:
 ### 2. Agent Configuration
 ```python
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help fetch and analyze web content while detecting harmful requests.",
     tools=[
         "web",

@@ -51,7 +51,7 @@ While Tyler can be used as a library, it comes with two interactive interfaces:
 
 The central component that:
 - Manages conversations through threads
-- Processes messages using LLMs (GPT-4o by default)
+- Processes messages using LLMs (GPT-4.1 by default)
 - Executes tools when needed
 - Maintains conversation state
 - Supports streaming responses
@@ -263,7 +263,7 @@ load_dotenv()
 
 # Initialize the agent (uses in-memory storage by default)
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with general questions"
 )
 

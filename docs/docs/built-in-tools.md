@@ -217,7 +217,7 @@ Or when creating an agent programmatically:
 from tyler.models import Agent
 
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with various tasks",
     tools=["web", "slack", "notion", "command_line", "image"]
 )

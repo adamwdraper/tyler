@@ -74,7 +74,7 @@ except Exception as e:
 
 # Initialize the agent (uses in-memory storage by default)
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To be a helpful assistant.",
     tools=[
         "web",
@@ -129,7 +129,7 @@ except Exception as e:
 ### 3. Agent initialization
 ```python
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To be a helpful assistant.",
     tools=[
         "web",
@@ -138,7 +138,7 @@ agent = Agent(
 )
 ```
 Creates a new Tyler agent with:
-- GPT-4o model
+- GPT-4.1 model
 - A general-purpose role
 - Web and Slack tools enabled
 - Default in-memory storage
@@ -203,7 +203,7 @@ agent = Agent(
 ### Additional tools
 ```python
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To be a helpful assistant.",
     tools=[
         "web",

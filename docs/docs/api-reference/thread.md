@@ -210,14 +210,14 @@ Returns the most recent message with the specified role, or None if no messages 
 
 ### generate_title
 
-Generate a concise title for the thread using GPT-4o.
+Generate a concise title for the thread using GPT-4.1.
 
 ```python
 @weave.op()
 def generate_title(self) -> str
 ```
 
-Uses GPT-4o to generate a descriptive title based on the conversation content.
+Uses GPT-4.1 to generate a descriptive title based on the conversation content.
 Updates the thread's title and `updated_at` timestamp.
 
 ### get_total_tokens
@@ -475,8 +475,8 @@ Converts naive datetime objects to UTC timezone-aware ones.
    print(f"Average latency: {timing['average_latency']} ms")
    
    # Get model-specific usage
-   model_usage = thread.get_model_usage("gpt-4o")
-   print(f"GPT-4o calls: {model_usage['calls']}")
+   model_usage = thread.get_model_usage("gpt-4.1")
+   print(f"GPT-4.1 calls: {model_usage['calls']}")
    
    # Track tool usage
    tool_usage = thread.get_tool_usage()

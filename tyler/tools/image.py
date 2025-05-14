@@ -166,7 +166,7 @@ async def analyze_image(*,
         
         # Call vision API using litellm
         response = completion(
-            model="gpt-4o",
+            model="gpt-4.1",
             messages=messages
         )
         

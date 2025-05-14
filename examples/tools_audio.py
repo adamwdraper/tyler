@@ -33,7 +33,7 @@ thread_store = ThreadStore()
 async def init():
     # Initialize the agent with audio tools and thread store
     return Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To help convert text to speech and transcribe speech to text.",
         tools=["audio"],  # Load the audio tools module
         temperature=0.7,

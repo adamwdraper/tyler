@@ -72,7 +72,7 @@ async def main():
         # Create an agent with the MCP tools
         agent = Agent(
             name="Tyler",
-            model_name="gpt-4o",
+            model_name="gpt-4.1",
             tools=mcp_tools
         )
         

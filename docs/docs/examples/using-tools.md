@@ -73,7 +73,7 @@ custom_slack_tool = {
 
 # Initialize the agent with both built-in and custom tools
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with web browsing and posting content to Slack",
     tools=[
         "web",          # Load the web tools module
@@ -134,7 +134,7 @@ Defines a custom tool with:
 ### 2. Agent Initialization
 ```python
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with web browsing and posting content to Slack",
     tools=[
         "web",              # Built-in web tools

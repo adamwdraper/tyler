@@ -31,7 +31,7 @@ thread_store = ThreadStore()
 async def init():
     # Initialize the agent with image tools and thread store
     return Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To help create and generate images based on text descriptions.",
         tools=["image"],  # Load the image tools module
         temperature=0.7,

@@ -25,7 +25,7 @@ except Exception as e:
 
 # Initialize the agent
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To be a helpful assistant.",
     temperature=0.7
 )

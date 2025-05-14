@@ -405,7 +405,7 @@ notes: |
   - Maintain context across conversations
 
 # Model Configuration
-model_name: "gpt-4o"
+model_name: "gpt-4.1"
 temperature: 0.7
 max_tool_iterations: 10
 

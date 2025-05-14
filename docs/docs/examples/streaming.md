@@ -29,7 +29,7 @@ except Exception as e:
 
 # Initialize the agent
 agent = Agent(
-    model_name="gpt-4o",  # Using latest GPT-4o model
+    model_name="gpt-4.1",  # Using latest GPT-4.1 model
     purpose="To be a helpful assistant that can answer questions and perform tasks.",
     tools=[
         "web",  # Enable web tools for fetching and processing web content
@@ -94,7 +94,7 @@ if __name__ == "__main__":
    - Sets up logging
 
 2. **Agent Configuration**:
-   - Uses the latest GPT-4o model
+   - Uses the latest GPT-4.1 model
    - Enables web and command line tools
    - Sets a specific purpose and temperature
 

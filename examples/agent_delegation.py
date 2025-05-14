@@ -28,21 +28,21 @@ async def main():
     # Create specialized agents
     research_agent = Agent(
         name="Research",  # Using simple, unique names
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To conduct in-depth research on topics and provide comprehensive information.",
         tools=["web"]  # Give research agent web search tools
     )
     
     code_agent = Agent(
         name="Code",  # Using simple, unique names
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To write, review, and explain code in various programming languages.",
         tools=[]  # No additional tools needed for coding
     )
     
     creative_agent = Agent(
         name="Creative",  # Using simple, unique names
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To generate creative content such as stories, poems, and marketing copy.",
         tools=[]  # No additional tools needed for creative writing
     )
@@ -50,7 +50,7 @@ async def main():
     # Create main agent with specialized agents as a list
     main_agent = Agent(
         name="Coordinator",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To coordinate work by delegating tasks to specialized agents when appropriate.",
         tools=[],  # No additional tools needed since agents will be added as tools
         agents=[research_agent, code_agent, creative_agent]  # Simple list instead of dictionary
