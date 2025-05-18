@@ -493,7 +493,7 @@ class SQLBackend(StorageBackend):
                             str_value = str(value).lower()
                         
                         # Use PostgreSQL's JSONB operators for direct string comparison
-                        param_name = f"platform_{key}"
+                        param_name = f"platform_{platform_name}_{key}"
                         query = query.where(
                             text(f"platforms->'{platform_name}'->'{key}' = :{param_name}::jsonb")
                             .bindparams(**{param_name: str_value})
