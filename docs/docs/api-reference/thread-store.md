@@ -147,23 +147,23 @@ threads = await store.find_by_attributes({
 })
 ```
 
-### find_by_source
+### find_by_platform
 
-Find threads by source name and properties.
+Find threads by platform name and properties.
 
 ```python
-async def find_by_source(
+async def find_by_platform(
     self,
-    source_name: str,
+    platform_name: str,
     properties: Dict[str, Any]
 ) -> List[Thread]
 ```
 
-Returns threads matching source name and properties.
+Returns threads matching platform name and properties.
 
 Example:
 ```python
-threads = await store.find_by_source(
+threads = await store.find_by_platform(
     "slack",
     {
         "channel": "C123",
@@ -329,7 +329,7 @@ print(len(system_messages))  # 0
    await store.save(thread)
    
    # Find related threads
-   related = await store.find_by_source(
+   related = await store.find_by_platform(
        "slack",
        {"channel": "C123"}
    )
@@ -460,7 +460,7 @@ The ThreadStore uses the following tables internally:
    await thread_store.save(thread)
    
    # Later, find the thread by source
-   thread = await thread_store.get_by_source("slack", "1234567890.123")
+   thread = await thread_store.get_by_platform("slack", "1234567890.123")
    ```
 
 5. **Working with Reactions**

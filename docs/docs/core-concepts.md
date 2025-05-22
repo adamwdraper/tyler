@@ -114,13 +114,14 @@ from tyler import Thread
 # Basic thread
 thread = Thread()
 
-# Thread with title and source
+# Thread with title and platforms
 thread = Thread(
     title="Support Conversation",
-    source={
-        "name": "slack",
-        "channel": "C123",
-        "thread_ts": "1234567890.123"
+    platforms={
+        "slack": {
+            "channel": "C123",
+            "thread_ts": "1234567890.123"
+        }
     }
 )
 
@@ -236,8 +237,12 @@ message = Message(
         "priority": "high"
     },
     source={
-        "name": "slack",
-        "thread_id": "123456"
+        "id": "U123456",
+        "name": "John Doe",
+        "type": "user",
+        "attributes": {
+            "email": "john.doe@example.com"
+        }
     }
 )
 
@@ -692,8 +697,8 @@ threads = await store.find_by_attributes({
     "priority": "high"
 })
 
-# Find by source
-threads = await store.find_by_source(
+# Find by platform
+threads = await store.find_by_platform(
     "slack",
     {"channel": "C123", "thread_ts": "123.456"}
 )

@@ -20,7 +20,12 @@ thread = Thread(
     title="My Thread",
     messages=[],
     attributes={},
-    source={"name": "slack", "thread_id": "123"}
+    platforms={
+        "slack": {
+            "channel": "C123",
+            "thread_ts": "1234567890.123"
+        }
+    }
 )
 ```
 
@@ -34,7 +39,7 @@ thread = Thread(
 | `created_at` | datetime | No | now(UTC) | Creation timestamp |
 | `updated_at` | datetime | No | now(UTC) | Last update timestamp |
 | `attributes` | Dict | No | \{\} | Custom metadata |
-| `source` | Optional[Dict[str, Any]] | No | None | Source information (e.g. Slack thread ID) |
+| `platforms` | Dict[str, Dict[str, str]] | No | \{\} | References to where this thread exists on external platforms. Maps platform name to platform-specific identifiers. |
 
 ## Methods
 
@@ -364,7 +369,7 @@ Returns:
     "created_at": str,       # ISO format with timezone if mode="json"
     "updated_at": str,       # ISO format with timezone if mode="json"
     "attributes": Dict,
-    "source": Optional[Dict]
+    "platforms": Optional[Dict]
 }
 ```
 
@@ -501,10 +506,11 @@ Converts naive datetime objects to UTC timezone-aware ones.
 4. **Source Tracking**
    ```python
    thread = Thread(
-       source={
-           "name": "slack",
-           "channel": "C123",
-           "thread_ts": "1234567890.123"
+       platforms={
+           "slack": {
+               "channel": "C123",
+               "thread_ts": "1234567890.123"
+           }
        }
    )
    ```

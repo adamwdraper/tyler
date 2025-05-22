@@ -226,8 +226,8 @@ agent = Agent(
     file_store=file_store  # Explicitly pass file_store instance
 )
 
-# When saving a thread with attachments, pass the file_store
-await thread_store.save(thread, file_store=file_store)
+# When saving a thread with attachments, the FileStore is used internally
+await thread_store.save(thread)
 ```
 
 The file storage system provides:

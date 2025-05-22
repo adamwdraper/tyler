@@ -56,16 +56,11 @@ message = Message(
     role="user",
     content="Hello!",
     source={
-        "entity": {
-            "id": "U123456",
-            "name": "John Doe",
-            "type": "user"
-        },
-        "platform": {
-            "name": "slack",
-            "attributes": {
-                "thread_ts": "1234567890.123456"
-            }
+        "id": "U123456",
+        "name": "John Doe",
+        "type": "user",
+        "attributes": {
+            "email": "john@example.com"
         }
     },
     attributes={"customer_id": "456"}
@@ -85,7 +80,7 @@ message = Message(
 | `tool_calls` | Optional[list] | No | None | Tool calls (for assistant messages) |
 | `attributes` | Dict | No | {} | Custom metadata |
 | `timestamp` | datetime | No | now(UTC) | Message timestamp |
-| `source` | Optional[MessageSource] | No | None | Source information (see MessageSource structure) |
+| `source` | Optional[EntitySource] | No | None | Source information (see EntitySource structure below) |
 | `attachments` | List[Attachment] | No | [] | File attachments |
 | `metrics` | Dict[str, Any] | No | Default metrics | Message metrics and analytics |
 | `reactions` | Dict[str, List[str]] | No | {} | Map of emoji to list of user IDs who reacted |
@@ -93,20 +88,12 @@ message = Message(
 ### Source Structure
 
 ```python
-# TypedDict definitions for source structure
-class PlatformSource(TypedDict, total=False):
-    name: str  # Name of the platform (slack, discord, etc.)
-    attributes: Optional[Dict[str, Any]]  # Platform-specific attributes
-
+# TypedDict definition for source structure
 class EntitySource(TypedDict, total=False):
     id: str  # Unique identifier for the entity
     name: str  # Human-readable name of the entity
     type: Literal["user", "agent", "tool"]  # Type of entity
     attributes: Optional[Dict[str, Any]]  # All other entity-specific attributes
-
-class MessageSource(TypedDict, total=False):
-    entity: Optional[EntitySource]  # Information about the entity that created the message
-    platform: Optional[PlatformSource]  # Information about the platform where the message was created
 ```
 
 ### Content Types
@@ -620,22 +607,14 @@ Ensures the source field has the correct structure with valid entity type if pre
        role="user",
        content="Hello",
        source={
-           "entity": {
-               "id": "U123456",
-               "name": "John Doe",
-               "type": "user",
-               "attributes": {
-                   "email": "john@example.com"
-               }
-           },
-           "platform": {
-               "name": "slack",
-               "attributes": {
-                   "channel_id": "C123456",
-                   "thread_ts": "1234567890.123456"
-               }
+           "id": "U123456",
+           "name": "John Doe",
+           "type": "user",
+           "attributes": {
+               "email": "john@example.com"
            }
-       }
+       },
+       attributes={"customer_id": "456"}
    )
    ```
 
