@@ -356,13 +356,16 @@ class Message(BaseModel):
         Returns:
             True if reaction was added, False if it already existed
         """
+        logger.info(f"Message.add_reaction (msg_id={self.id}): Current reactions: {self.reactions}. Adding '{emoji}' for user '{user_id}'.")
         if emoji not in self.reactions:
             self.reactions[emoji] = []
         
         if user_id in self.reactions[emoji]:
-            return False
+            logger.warning(f"Message.add_reaction (msg_id={self.id}): User '{user_id}' already reacted with '{emoji}'.")
+            return False # Indicate that reaction was not newly added because it already existed
         
         self.reactions[emoji].append(user_id)
+        logger.info(f"Message.add_reaction (msg_id={self.id}): Successfully added. Reactions now: {self.reactions}")
         return True
 
     def remove_reaction(self, emoji: str, user_id: str) -> bool:
@@ -375,7 +378,9 @@ class Message(BaseModel):
         Returns:
             True if reaction was removed, False if it didn't exist
         """
+        logger.info(f"Message.remove_reaction (msg_id={self.id}): Current reactions: {self.reactions}. Removing '{emoji}' for user '{user_id}'.")
         if emoji not in self.reactions or user_id not in self.reactions[emoji]:
+            logger.warning(f"Message.remove_reaction (msg_id={self.id}): Emoji '{emoji}' or user '{user_id}' not found in reactions {self.reactions}.")
             return False
         
         self.reactions[emoji].remove(user_id)
@@ -384,6 +389,7 @@ class Message(BaseModel):
         if not self.reactions[emoji]:
             del self.reactions[emoji]
             
+        logger.info(f"Message.remove_reaction (msg_id={self.id}): Successfully removed. Reactions now: {self.reactions}")
         return True
 
     def get_reactions(self) -> Dict[str, List[str]]:

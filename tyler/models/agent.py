@@ -207,7 +207,7 @@ class Agent(Model):
                 agent_runner.register_agent(agent.name, agent)
                 
                 # Define delegation handler function
-                async def delegation_handler(task, context=None, agent_name=agent.name):
+                async def delegation_handler(task, context=None, agent_name=agent.name, **kwargs):
                     # Properly await the coroutine
                     response, metrics = await agent_runner.run_agent(agent_name, task, context)
                     # We only return the response string, not the metrics
@@ -392,7 +392,7 @@ class Agent(Model):
             Tuple[Any, Dict]: The completion response and metrics.
         """
         # Get thread messages (these won't include system messages as they're filtered out)
-        thread_messages = await thread.get_messages_for_chat_completion(file_store=self._get_file_store())
+        thread_messages = await thread.get_messages_for_chat_completion(file_store=await self._get_file_store())
         
         # Create completion messages with ephemeral system prompt at the beginning
         completion_messages = [{"role": "system", "content": self._system_prompt}] + thread_messages
@@ -1191,13 +1191,16 @@ class Agent(Model):
                             break
                     
                     except Exception as e:
+                        tool_name_for_error = "unknown_tool"
+                        if current_tool_call and 'function' in current_tool_call and 'name' in current_tool_call['function']:
+                            tool_name_for_error = current_tool_call['function']['name']
                         error_msg = f"Tool execution failed: {str(e)}"
                         error_message = Message(
                             role="tool",
-                            name=tool_name,
+                            name=tool_name_for_error,
                             content=error_msg,
-                            tool_call_id=tool_call.get('id') if isinstance(tool_call, dict) else tool_call.id,
-                            source=self._create_tool_source(tool_name),
+                            tool_call_id=current_tool_call.get('id') if current_tool_call else None,
+                            source=self._create_tool_source(tool_name_for_error),
                             metrics={
                                 "timing": {
                                     "started_at": datetime.now(UTC).isoformat(),
@@ -1207,7 +1210,6 @@ class Agent(Model):
                             }
                         )
                         thread.add_message(error_message)
-                        new_messages.append(error_message)
                         yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
                         # Save on error like in go
                         thread_store = await self._get_thread_store()
@@ -1270,8 +1272,8 @@ class Agent(Model):
                 await thread_store.save(thread)
 
             # Yield final complete update
-            new_messages = [m for m in thread.messages if m.role != "user"]
-            yield StreamUpdate(StreamUpdate.Type.COMPLETE, (thread, new_messages))
+            final_new_messages = [m for m in thread.messages if m.role != "user"]
+            yield StreamUpdate(StreamUpdate.Type.COMPLETE, (thread, final_new_messages))
 
         except Exception as e:
             error_msg = f"Stream processing failed: {str(e)}"
@@ -1288,7 +1290,6 @@ class Agent(Model):
                 }
             )
             thread.add_message(error_message)
-            new_messages.append(error_message)
             yield StreamUpdate(StreamUpdate.Type.ERROR, error_msg)
             # Save on error like in go
             thread_store = await self._get_thread_store()

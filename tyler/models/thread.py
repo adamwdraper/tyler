@@ -6,6 +6,9 @@ from tyler.storage.file_store import FileStore
 from litellm import completion
 import uuid
 import weave
+from tyler.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 class Thread(BaseModel):
     """Represents a thread containing multiple messages"""
@@ -319,9 +322,14 @@ class Thread(BaseModel):
         """
         message = self.get_message_by_id(message_id)
         if not message:
+            logger.warning(f"Thread.add_reaction (thread_id={self.id}): Message with ID '{message_id}' not found.")
             return False
-            
-        return message.add_reaction(emoji, user_id)
+        
+        result = message.add_reaction(emoji, user_id)
+        if result:
+            self.updated_at = datetime.now(UTC) # Ensure thread update time is changed
+            logger.info(f"Thread.add_reaction (thread_id={self.id}): Message '{message_id}' reactions updated. Thread updated_at: {self.updated_at}")
+        return result
     
     def remove_reaction(self, message_id: str, emoji: str, user_id: str) -> bool:
         """Remove a reaction from a message in the thread
@@ -336,9 +344,14 @@ class Thread(BaseModel):
         """
         message = self.get_message_by_id(message_id)
         if not message:
+            logger.warning(f"Thread.remove_reaction (thread_id={self.id}): Message with ID '{message_id}' not found.")
             return False
             
-        return message.remove_reaction(emoji, user_id)
+        result = message.remove_reaction(emoji, user_id)
+        if result:
+            self.updated_at = datetime.now(UTC) # Ensure thread update time is changed
+            logger.info(f"Thread.remove_reaction (thread_id={self.id}): Message '{message_id}' reactions updated. Thread updated_at: {self.updated_at}")
+        return result
     
     def get_reactions(self, message_id: str) -> Dict[str, List[str]]:
         """Get all reactions for a message in the thread

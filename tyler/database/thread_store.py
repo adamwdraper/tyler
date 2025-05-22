@@ -1,6 +1,7 @@
 """Thread storage implementation."""
 from typing import Optional, Dict, Any, List
 from tyler.models.thread import Thread
+from tyler.models.message import Message
 from tyler.utils.logging import get_logger
 from .storage_backend import MemoryBackend, SQLBackend
 
@@ -179,25 +180,34 @@ class ThreadStore:
         await self._ensure_initialized()
         return await self._backend.list_recent(limit)
         
-    async def find_messages_by_attribute(self, path: str, value: Any) -> bool:
+    async def find_messages_by_attribute(self, path: str, value: Any) -> List[Message]:
         """
-        Check if any messages exist with a specific attribute at a given JSON path.
-        This is useful for checking if a message with specific metadata (like a Slack ts)
-        has already been processed.
+        Find messages with a specific attribute at a given JSON path.
+        This is useful for finding messages with specific metadata (like a Slack ts).
         
         Args:
-            path: Dot-notation path to the attribute (e.g., "source.platform.attributes.ts")
+            path: Dot-notation path to the attribute (e.g., "platforms.slack.ts")
             value: The value to search for
             
         Returns:
-            True if any messages match, False otherwise
+            List of Message objects that match the criteria (possibly empty)
         """
         await self._ensure_initialized()
         if hasattr(self._backend, 'find_messages_by_attribute'):
-            return await self._backend.find_messages_by_attribute(path, value)
+            message_records = await self._backend.find_messages_by_attribute(path, value)
+            
+            # Convert MessageRecord objects to Message objects
+            messages = []
+            if hasattr(self._backend, '_create_message_from_record'):
+                for record in message_records:
+                    message = self._backend._create_message_from_record(record)
+                    messages.append(message)
+            
+            return messages
         else:
             # Fallback implementation for backends that don't support this method
             # This is less efficient but provides compatibility
+            messages = []
             threads = await self._backend.list_recent(100)  # Get recent threads
             
             # Check each thread's messages
@@ -218,9 +228,9 @@ class ThreadStore:
                     
                     # Check if we found a match
                     if current == value:
-                        return True
+                        messages.append(message)
             
-            return False
+            return messages
 
     # Add properties to expose backend attributes
     @property

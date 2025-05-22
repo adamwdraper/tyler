@@ -9,8 +9,62 @@ from tyler.tools.notion import (
 )
 
 # Mock responses
-MOCK_SEARCH_RESPONSE = {
-    "results": [{"id": "123", "title": "Test Page"}]
+MOCK_RAW_PAGE_ITEM_FOR_SEARCH = {
+    "object": "page",
+    "id": "page_id_123",
+    "created_time": "2023-01-01T12:00:00.000Z",
+    "last_edited_time": "2023-01-02T12:00:00.000Z",
+    "created_by": {"object": "user", "id": "user_id_1"},
+    "last_edited_by": {"object": "user", "id": "user_id_2"},
+    "cover": None,
+    "icon": None,
+    "parent": {"type": "database_id", "database_id": "db_id_456"},
+    "archived": False,
+    "in_trash": False, # Assuming in_trash might be in raw, or handled by _simplify_notion_item
+    "properties": {
+        "title": {
+            "id": "title",
+            "type": "title",
+            "title": [{"type": "text", "text": {"content": "Test Page Title", "link": None}, "annotations": {}, "plain_text": "Test Page Title", "href": None}]
+        }
+    },
+    "url": "https://www.notion.so/page_id_123",
+    "public_url": None,
+}
+
+SIMPLIFIED_PAGE_ITEM_FOR_SEARCH = {
+    "object": "page",
+    "id": "page_id_123",
+    "created_time": "2023-01-01T12:00:00.000Z",
+    "last_edited_time": "2023-01-02T12:00:00.000Z",
+    "archived": False,
+    "in_trash": False,
+    "parent": {"type": "database_id", "database_id": "db_id_456"},
+    "title": "Test Page Title",
+    "url": "https://www.notion.so/page_id_123",
+    "public_url": None
+}
+
+# This mocks the direct JSON response from the Notion API's search endpoint
+MOCK_RAW_NOTION_SEARCH_API_RESPONSE = {
+    "object": "list",
+    "results": [MOCK_RAW_PAGE_ITEM_FOR_SEARCH],
+    "next_cursor": "some_next_cursor_value",
+    "has_more": True,
+    "type": "page_or_database",
+    "page_or_database": {},
+    "request_id": "test_request_id_123"
+}
+
+# This is the expected output from our @weave.op search function
+EXPECTED_WEAVE_OP_SEARCH_RESULT = {
+    "object": "list",
+    "results": [SIMPLIFIED_PAGE_ITEM_FOR_SEARCH],
+    "next_cursor": "some_next_cursor_value",
+    "has_more": True,
+    "type": "page_or_database",
+    "page_or_database": {},
+    "request_id": "test_request_id_123"
 }
 
 MOCK_PAGE_RESPONSE = {
@@ -60,7 +114,7 @@ def test_search(mock_env_token):
     """Test search functionality"""
     with patch('requests.post') as mock_post:
         mock_response = MagicMock()
-        mock_response.json.return_value = MOCK_SEARCH_RESPONSE
+        mock_response.json.return_value = MOCK_RAW_NOTION_SEARCH_API_RESPONSE
         mock_post.return_value = mock_response
 
         result = search(
@@ -69,7 +123,7 @@ def test_search(mock_env_token):
             start_cursor="cursor1",
             page_size=10
         )
-        assert result == MOCK_SEARCH_RESPONSE
+        assert result == EXPECTED_WEAVE_OP_SEARCH_RESULT
         mock_post.assert_called_once()
 
 def test_get_page(mock_env_token):
@@ -178,11 +232,11 @@ def test_search_with_minimal_params(mock_env_token):
     """Test search function with minimal parameters"""
     with patch('requests.post') as mock_post:
         mock_response = MagicMock()
-        mock_response.json.return_value = MOCK_SEARCH_RESPONSE
+        mock_response.json.return_value = MOCK_RAW_NOTION_SEARCH_API_RESPONSE
         mock_post.return_value = mock_response
 
         result = search()
-        assert result == MOCK_SEARCH_RESPONSE
+        assert result == EXPECTED_WEAVE_OP_SEARCH_RESULT
         mock_post.assert_called_once()
 
 def test_create_comment_with_page_id(mock_env_token):
