@@ -638,8 +638,16 @@ store = await ThreadStore.create("postgresql+asyncpg://user:pass@localhost/dbnam
 store = await ThreadStore.create("sqlite+aiosqlite:///path/to/db.sqlite")
 # Connects immediately, validates file access
 
-# Use with agent
-agent = Agent(thread_store=store)
+# Register stores
+from tyler.utils.registry import register_thread_store, register_file_store
+thread_store = await ThreadStore.create() # or with DB URL
+file_store = await FileStore.create() # or with path
+register_thread_store("default", thread_store)
+register_file_store("default", file_store)
+
+# Initialize agent and set stores
+agent = Agent(model_name="gpt-4.1", purpose="To help with tasks")
+agent.set_stores(thread_store_name="default", file_store_name="default")
 ```
 
 #### Memory Backend
@@ -721,13 +729,20 @@ file_store = await FileStore.create(
 # Or use default settings from environment variables
 file_store = await FileStore.create()
 
-# Pass file_store to Agent
+# Register stores (if not done already)
+# from tyler.utils.registry import register_thread_store, register_file_store
+# thread_store = await ThreadStore.create() # or with DB URL
+# file_store = await FileStore.create() # or with path
+# register_thread_store("default", thread_store)
+# register_file_store("default", file_store)
+
+# Initialize agent and set stores
 agent = Agent(
     model_name="gpt-4.1",
-    purpose="To help with tasks",
-    thread_store=thread_store,
-    file_store=file_store  # Explicitly pass file_store instance
+    purpose="To help with tasks"
+    # No direct store parameters here
 )
+agent.set_stores(thread_store_name="default", file_store_name="default")
 
 # When handling attachments
 message = Message(role="user", content="Here's a file")

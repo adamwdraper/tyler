@@ -137,12 +137,17 @@ except Exception as e:
     print(f"Database connection failed: {e}")
     # Handle connection failure appropriately
 
-# Create agent with database storage
+# Register the thread store (and file store if needed)
+from tyler.utils.registry import register_thread_store
+# Assuming 'store' is your created ThreadStore instance as above
+register_thread_store("default_db_store", store)
+
+# Create agent and set it to use the registered store
 agent = Agent(
     model_name="gpt-4.1",
-    purpose="To help with tasks",
-    thread_store=store
+    purpose="To help with tasks"
 )
+agent.set_stores(thread_store_name="default_db_store") # Add file_store_name if using a registered file store
 
 # Must save threads and changes to persist
 thread = Thread()
@@ -218,13 +223,20 @@ file_store = await FileStore.create(
 # Or use default settings from environment variables
 file_store = await FileStore.create()
 
+# Register stores (thread_store would typically be your database store)
+from tyler.utils.registry import register_thread_store, register_file_store
+# Example: using the 'store' from PostgreSQL example and 'file_store' created above
+# register_thread_store("my_thread_store", store) # 'store' is your DB-backed ThreadStore
+register_file_store("my_file_store", file_store)
+
 # Pass the file_store instance to an Agent
 agent = Agent(
     model_name="gpt-4.1",
-    purpose="To help with tasks",
-    thread_store=thread_store,
-    file_store=file_store  # Explicitly pass file_store instance
+    purpose="To help with tasks"
+    # Agent is initialized without direct store instances
 )
+# Set stores by name from the registry
+agent.set_stores(thread_store_name="my_thread_store", file_store_name="my_file_store")
 
 # When saving a thread with attachments, the FileStore is used internally
 await thread_store.save(thread)
