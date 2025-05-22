@@ -1,13 +1,14 @@
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock, create_autospec
-from tyler.models.agent import Agent, StreamUpdate
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, ThreadStore, Message, StreamUpdate
 from tyler.utils.tool_runner import tool_runner
 from litellm import ModelResponse
 import json
 from types import SimpleNamespace
-from tyler.database.thread_store import ThreadStore
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 def create_streaming_chunk(content=None, tool_calls=None, role="assistant", usage=None):
     """Helper function to create streaming chunks with proper structure"""
@@ -58,7 +59,7 @@ def mock_litellm():
 def agent(mock_litellm):
     with patch('tyler.models.agent.tool_runner', create_autospec(tool_runner)):
         agent = Agent(
-            model_name="gpt-4o",
+            model_name="gpt-4.1",
             temperature=0.7,
             purpose="test purpose",
             stream=True
@@ -242,7 +243,7 @@ async def test_go_stream_invalid_json_handling():
 @pytest.mark.asyncio
 async def test_go_stream_metrics_tracking():
     """Test that metrics are properly tracked in streaming mode"""
-    agent = Agent(stream=True, model_name="gpt-4o")
+    agent = Agent(stream=True, model_name="gpt-4.1")
     thread = Thread()
     thread.add_message(Message(role="user", content="Test metrics"))
     
@@ -275,7 +276,7 @@ async def test_go_stream_metrics_tracking():
         
         # Verify metrics are present and correct
         assert "metrics" in assistant_message.model_dump()
-        assert assistant_message.metrics["model"] == "gpt-4o"
+        assert assistant_message.metrics["model"] == "gpt-4.1"
         assert "timing" in assistant_message.metrics
         assert "started_at" in assistant_message.metrics["timing"]
         assert "ended_at" in assistant_message.metrics["timing"]
@@ -291,7 +292,7 @@ async def test_go_stream_metrics_tracking():
 @pytest.mark.asyncio
 async def test_go_stream_tool_metrics():
     """Test that tool execution metrics are tracked in streaming mode"""
-    agent = Agent(stream=True, model_name="gpt-4o")
+    agent = Agent(stream=True, model_name="gpt-4.1")
     thread = Thread()
     thread.add_message(Message(role="user", content="Test tool metrics"))
     
@@ -345,7 +346,7 @@ async def test_go_stream_tool_metrics():
 @pytest.mark.asyncio
 async def test_go_stream_multiple_messages_metrics():
     """Test metrics tracking across multiple messages in streaming mode"""
-    agent = Agent(stream=True, model_name="gpt-4o")
+    agent = Agent(stream=True, model_name="gpt-4.1")
     thread = Thread()
     thread.add_message(Message(role="user", content="Test multiple messages"))
     
@@ -400,7 +401,7 @@ async def test_go_stream_multiple_messages_metrics():
             assert "metrics" in message.model_dump()
             # Only check model name for assistant messages
             if message.role == "assistant":
-                assert message.metrics["model"] == "gpt-4o"
+                assert message.metrics["model"] == "gpt-4.1"
             assert "timing" in message.metrics
             
             if message.role == "assistant":
@@ -593,12 +594,58 @@ async def test_go_stream_empty_arguments():
 @pytest.mark.asyncio
 async def test_go_stream_thread_store_save():
     """Test that thread is saved during streaming"""
-    # Create thread store (will initialize automatically when needed)
-    thread_store = ThreadStore()
+    # Create mock thread store
+    mock_thread_store = MagicMock(spec=ThreadStore)
+    mock_thread_store.save = AsyncMock(return_value=None)
+    # Keep track of saved thread state
+    saved_thread_data = {}
     
-    agent = Agent(stream=True, thread_store=thread_store)
+    async def mock_save(thread):
+        # Simulate saving by storing messages using model_dump(mode='json')
+        # to ensure datetime is stored as string, like a real DB would
+        saved_thread_data[thread.id] = [
+            msg.model_dump(mode='json') for msg in thread.messages
+        ]
+        
+    async def mock_get(thread_id):
+        if thread_id in saved_thread_data:
+            # Reconstruct thread from saved data
+            reconstructed_messages = []
+            for msg_data in saved_thread_data[thread_id]:
+                # --- Key Change: Parse timestamp string back to datetime ---
+                if 'timestamp' in msg_data and isinstance(msg_data['timestamp'], str):
+                    try:
+                        # Ensure the string is parsed correctly into a datetime object
+                        msg_data['timestamp'] = datetime.fromisoformat(msg_data['timestamp'])
+                    except ValueError:
+                        # Handle potential parsing errors, maybe log or use a default
+                        logger.error(f"Failed to parse timestamp: {msg_data['timestamp']}")
+                        # Optionally set a default or re-raise, depending on desired test behavior
+                        # For now, let's remove it to avoid crashing the test if parsing fails
+                        del msg_data['timestamp'] 
+                # --- End Key Change ---
+                
+                # Recreate message, handling potential missing timestamp if parsing failed
+                try:
+                    reconstructed_messages.append(Message(**msg_data))
+                except Exception as e:
+                     logger.error(f"Failed to reconstruct message: {msg_data} with error {e}")
+                     # Skip this message if reconstruction fails
+                     continue
+                     
+            return Thread(
+                id=thread_id, 
+                messages=reconstructed_messages
+            )
+        return None
+        
+    mock_thread_store.save = mock_save
+    mock_thread_store.get = mock_get
+    
+    agent = Agent(stream=True)
     thread = Thread(id="test-thread")
-    await thread_store.save(thread)
+    # Initial 'save' to put the empty thread in our mock store
+    await mock_thread_store.save(thread)
     
     # Mock chunks with tool call
     chunks = [
@@ -614,6 +661,12 @@ async def test_go_stream_thread_store_save():
     
     mock_weave_call = MagicMock()
     
+    # --- Key Change: Patch _get_thread_store --- 
+    async def get_mock_store():
+        return mock_thread_store
+    agent._get_thread_store = get_mock_store
+    # --- End Key Change ---\
+    
     with patch.object(agent, '_get_completion') as mock_get_completion, \
          patch('tyler.models.agent.tool_runner') as mock_tool_runner:
         mock_get_completion.call.return_value = (async_generator(chunks), mock_weave_call)
@@ -626,10 +679,12 @@ async def test_go_stream_thread_store_save():
         async for update in agent.go_stream(thread):
             updates.append(update)
         
-        # Verify thread was saved
-        saved_thread = await thread_store.get(thread.id)
+        # Verify thread was saved with messages
+        saved_thread = await mock_thread_store.get(thread.id)
         assert saved_thread is not None
-        assert len(saved_thread.messages) > 0
+        # Check that messages were added before saving
+        # We expect at least the assistant message and the tool message
+        assert len(saved_thread.messages) >= 2, f"Expected >= 2 messages, found {len(saved_thread.messages)}"
 
 @pytest.mark.asyncio
 async def test_go_stream_reset_iteration_count():

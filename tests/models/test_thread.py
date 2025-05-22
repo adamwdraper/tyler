@@ -1,10 +1,6 @@
 import pytest
 from datetime import datetime, UTC, timedelta
-from tyler.models.thread import Thread
-from tyler.models.message import Message
-from tyler.models.attachment import Attachment
-from unittest.mock import patch, AsyncMock
-import os
+from tyler import Thread, Message, Attachment
 from litellm import ModelResponse
 
 @pytest.fixture
@@ -14,20 +10,10 @@ def sample_thread():
         id="test-thread",
         title="Test Thread",
         attributes={"category": "test"},
-        source={
-            "entity": {
-                "id": "U123456",
-                "name": "Test User",
-                "type": "user",
-                "attributes": {
-                    "user_id": "U123456"
-                }
-            },
-            "platform": {
-                "name": "slack",
-                "attributes": {
-                    "channel": "general"
-                }
+        platforms={
+            "slack": {
+                "channel": "C123",
+                "thread_ts": "1234567890.123"
             }
         }
     )
@@ -47,7 +33,7 @@ def test_create_thread():
     assert thread.updated_at.tzinfo == UTC
     assert thread.messages == []
     assert thread.attributes == {}
-    assert thread.source is None
+    assert thread.platforms == {}
 
 def test_add_message():
     """Test adding a message to a thread"""
@@ -66,9 +52,8 @@ def test_thread_serialization(sample_thread):
     assert data["id"] == "test-thread"
     assert data["title"] == "Test Thread"
     assert data["attributes"] == {"category": "test"}
-    assert data["source"]["entity"]["id"] == "U123456"
-    assert data["source"]["platform"]["name"] == "slack"
-    assert data["source"]["platform"]["attributes"]["channel"] == "general"
+    assert data["platforms"]["slack"]["channel"] == "C123"
+    assert data["platforms"]["slack"]["thread_ts"] == "1234567890.123"
     assert len(data["messages"]) == 3
     assert data["messages"][0]["role"] == "system"
     assert data["messages"][1]["role"] == "user"
@@ -86,7 +71,7 @@ def test_thread_serialization(sample_thread):
     assert new_thread.id == sample_thread.id
     assert new_thread.title == sample_thread.title
     assert new_thread.attributes == sample_thread.attributes
-    assert new_thread.source == sample_thread.source
+    assert new_thread.platforms == sample_thread.platforms
     assert len(new_thread.messages) == len(sample_thread.messages)
     for orig_msg, new_msg in zip(sample_thread.messages, new_thread.messages):
         assert new_msg.role == orig_msg.role
@@ -303,7 +288,7 @@ def test_get_total_tokens():
         role="user",
         content="Hello",
         metrics={
-            "model": "gpt-4o",
+            "model": "gpt-4.1",
             "usage": {
                 "completion_tokens": 10,
                 "prompt_tokens": 5,
@@ -315,7 +300,7 @@ def test_get_total_tokens():
         role="assistant",
         content="Hi there!",
         metrics={
-            "model": "gpt-4o",
+            "model": "gpt-4.1",
             "usage": {
                 "completion_tokens": 20,
                 "prompt_tokens": 15,
@@ -332,10 +317,10 @@ def test_get_total_tokens():
     assert token_usage["overall"]["prompt_tokens"] == 20
     assert token_usage["overall"]["total_tokens"] == 50
     
-    assert "gpt-4o" in token_usage["by_model"]
-    assert token_usage["by_model"]["gpt-4o"]["completion_tokens"] == 30
-    assert token_usage["by_model"]["gpt-4o"]["prompt_tokens"] == 20
-    assert token_usage["by_model"]["gpt-4o"]["total_tokens"] == 50
+    assert "gpt-4.1" in token_usage["by_model"]
+    assert token_usage["by_model"]["gpt-4.1"]["completion_tokens"] == 30
+    assert token_usage["by_model"]["gpt-4.1"]["prompt_tokens"] == 20
+    assert token_usage["by_model"]["gpt-4.1"]["total_tokens"] == 50
 
 def test_get_model_usage():
     """Test getting model usage statistics"""
@@ -346,7 +331,7 @@ def test_get_model_usage():
         role="user",
         content="Hello",
         metrics={
-            "model": "gpt-4o",
+            "model": "gpt-4.1",
             "usage": {
                 "completion_tokens": 10,
                 "prompt_tokens": 5,
@@ -372,13 +357,13 @@ def test_get_model_usage():
     
     # Test getting all model usage
     all_usage = thread.get_model_usage()
-    assert "gpt-4o" in all_usage
+    assert "gpt-4.1" in all_usage
     assert "gpt-3.5-turbo" in all_usage
-    assert all_usage["gpt-4o"]["calls"] == 1
+    assert all_usage["gpt-4.1"]["calls"] == 1
     assert all_usage["gpt-3.5-turbo"]["calls"] == 1
     
     # Test getting specific model usage
-    gpt4_usage = thread.get_model_usage("gpt-4o")
+    gpt4_usage = thread.get_model_usage("gpt-4.1")
     assert gpt4_usage["calls"] == 1
     assert gpt4_usage["completion_tokens"] == 10
     assert gpt4_usage["prompt_tokens"] == 5
@@ -511,7 +496,7 @@ def test_thread_with_weave_metrics():
         role="assistant",
         content="Hello",
         metrics={
-            "model": "gpt-4o",
+            "model": "gpt-4.1",
             "usage": {
                 "completion_tokens": 10,
                 "prompt_tokens": 5,
@@ -526,4 +511,52 @@ def test_thread_with_weave_metrics():
     
     thread.add_message(message)
     assert thread.messages[0].metrics["weave_call"]["id"] == "call-123"
-    assert thread.messages[0].metrics["weave_call"]["ui_url"] == "https://weave.ui/call-123" 
+    assert thread.messages[0].metrics["weave_call"]["ui_url"] == "https://weave.ui/call-123"
+
+def test_thread_reactions():
+    """Test thread reaction functionality"""
+    thread = Thread(id="test-thread")
+    
+    # Add some messages to the thread
+    msg1 = Message(role="user", content="Hello")
+    msg2 = Message(role="assistant", content="Hi there!")
+    msg3 = Message(role="user", content="Can you help me?")
+    
+    thread.add_message(msg1)
+    thread.add_message(msg2)
+    thread.add_message(msg3)
+    
+    # Verify get_message_by_id works correctly
+    assert thread.get_message_by_id(msg1.id) == msg1
+    assert thread.get_message_by_id(msg2.id) == msg2
+    assert thread.get_message_by_id(msg3.id) == msg3
+    assert thread.get_message_by_id("nonexistent-id") is None
+    
+    # Add reactions to messages
+    assert thread.add_reaction(msg1.id, ":thumbsup:", "user1") == True
+    assert thread.add_reaction(msg2.id, ":heart:", "user1") == True
+    assert thread.add_reaction(msg2.id, ":heart:", "user2") == True
+    
+    # Verify reactions were added correctly
+    assert len(msg1.reactions) == 1
+    assert len(msg2.reactions) == 1
+    assert len(msg3.reactions) == 0
+    
+    assert msg1.reactions[":thumbsup:"] == ["user1"]
+    assert msg2.reactions[":heart:"] == ["user1", "user2"]
+    
+    # Get reactions through thread method
+    assert thread.get_reactions(msg1.id) == {":thumbsup:": ["user1"]}
+    assert thread.get_reactions(msg2.id) == {":heart:": ["user1", "user2"]}
+    assert thread.get_reactions(msg3.id) == {}
+    assert thread.get_reactions("nonexistent-id") == {}
+    
+    # Remove reactions
+    assert thread.remove_reaction(msg2.id, ":heart:", "user1") == True
+    assert thread.remove_reaction(msg2.id, ":heart:", "nonexistent-user") == False
+    assert thread.remove_reaction("nonexistent-id", ":thumbsup:", "user1") == False
+    
+    # Verify reaction removed
+    assert len(msg2.reactions[":heart:"]) == 1
+    assert "user1" not in msg2.reactions[":heart:"]
+    assert "user2" in msg2.reactions[":heart:"] 

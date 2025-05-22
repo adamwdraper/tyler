@@ -16,10 +16,7 @@ import asyncio
 import weave
 import sys
 import json
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread, Message
-from tyler.models.attachment import Attachment
-from tyler.database.thread_store import ThreadStore
+from tyler import Agent, Thread, Message, Attachment, ThreadStore
 
 try:
     if os.getenv("WANDB_API_KEY"):
@@ -34,7 +31,7 @@ thread_store = ThreadStore()
 async def init():
     # Initialize the agent with image tools and thread store
     return Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To help create and generate images based on text descriptions.",
         tools=["image"],  # Load the image tools module
         temperature=0.7,

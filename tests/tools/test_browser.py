@@ -40,7 +40,7 @@ async def test_browser_automate_success():
         # Call the function
         result = await browser_automate(
             task="Go to google.com and search for test",
-            model="gpt-4o",
+            model="gpt-4.1",
             headless=True
         )
         
@@ -66,7 +66,7 @@ async def test_browser_automate_exception():
         # Call the function
         result = await browser_automate(
             task="Go to google.com and search for test",
-            model="gpt-4o",
+            model="gpt-4.1",
             headless=True
         )
         

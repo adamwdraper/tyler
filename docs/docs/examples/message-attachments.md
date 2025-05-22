@@ -20,11 +20,7 @@ The example shows:
 
 ```python
 from dotenv import load_dotenv
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
-from tyler.models.attachment import Attachment
-from tyler.database.thread_store import ThreadStore
+from tyler import Agent, Thread, Message, Attachment, ThreadStore
 import asyncio
 import os
 import weave
@@ -47,7 +43,7 @@ async def example_basic_attachment():
     
     # Create agent with thread store
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To help analyze documents",
         thread_store=thread_store
     )
@@ -92,7 +88,7 @@ async def example_multiple_attachments():
     thread_store = ThreadStore()
     
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         thread_store=thread_store
     )
     
@@ -142,7 +138,7 @@ async def example_attachment_processing():
     thread_store = ThreadStore()
     
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         thread_store=thread_store
     )
 
@@ -157,7 +153,7 @@ async def image_attachment_example():
     
     # Create agent with thread store and vision capability
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To analyze images",
         thread_store=thread_store
     )
@@ -205,7 +201,7 @@ async def audio_attachment_example():
     
     # Create agent with thread store
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To transcribe and analyze audio",
         thread_store=thread_store
     )

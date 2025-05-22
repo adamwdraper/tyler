@@ -9,7 +9,7 @@ The `Thread` class manages conversations and maintains context between messages.
 ## Initialization
 
 ```python
-from tyler.models.thread import Thread
+from tyler import Thread
 from datetime import datetime, UTC
 
 # Create a new thread
@@ -20,7 +20,12 @@ thread = Thread(
     title="My Thread",
     messages=[],
     attributes={},
-    source={"name": "slack", "thread_id": "123"}
+    platforms={
+        "slack": {
+            "channel": "C123",
+            "thread_ts": "1234567890.123"
+        }
+    }
 )
 ```
 
@@ -34,7 +39,7 @@ thread = Thread(
 | `created_at` | datetime | No | now(UTC) | Creation timestamp |
 | `updated_at` | datetime | No | now(UTC) | Last update timestamp |
 | `attributes` | Dict | No | \{\} | Custom metadata |
-| `source` | Optional[Dict[str, Any]] | No | None | Source information (e.g. Slack thread ID) |
+| `platforms` | Dict[str, Dict[str, str]] | No | \{\} | References to where this thread exists on external platforms. Maps platform name to platform-specific identifiers. |
 
 ## Methods
 
@@ -59,6 +64,117 @@ Messages are sequenced based on their role:
 ```python
 message = Message(role="user", content="Hello!")
 thread.add_message(message)
+```
+
+### get_message_by_id
+
+Return the message with the specified ID.
+
+```python
+def get_message_by_id(
+    self,
+    message_id: str
+) -> Optional[Message]
+```
+
+Returns the message with the specified ID, or None if no message exists with that ID.
+
+#### Example
+
+```python
+message = thread.get_message_by_id("msg_123")
+if message:
+    print(f"Found message: {message.content}")
+```
+
+### add_reaction
+
+Add a reaction to a message in the thread.
+
+```python
+def add_reaction(
+    self,
+    message_id: str,
+    emoji: str,
+    user_id: str
+) -> bool
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `message_id` | str | Yes | None | ID of the message to react to |
+| `emoji` | str | Yes | None | Emoji shortcode (e.g., ":thumbsup:") |
+| `user_id` | str | Yes | None | ID of the user adding the reaction |
+
+#### Returns
+
+`True` if reaction was added, `False` if it wasn't (message not found or already reacted).
+
+#### Example
+
+```python
+thread.add_reaction("msg_123", ":thumbsup:", "user_456")
+```
+
+### remove_reaction
+
+Remove a reaction from a message in the thread.
+
+```python
+def remove_reaction(
+    self,
+    message_id: str,
+    emoji: str,
+    user_id: str
+) -> bool
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `message_id` | str | Yes | None | ID of the message to remove reaction from |
+| `emoji` | str | Yes | None | Emoji shortcode (e.g., ":thumbsup:") |
+| `user_id` | str | Yes | None | ID of the user removing the reaction |
+
+#### Returns
+
+`True` if reaction was removed, `False` if it wasn't (message or reaction not found).
+
+#### Example
+
+```python
+thread.remove_reaction("msg_123", ":thumbsup:", "user_456")
+```
+
+### get_reactions
+
+Get all reactions for a message in the thread.
+
+```python
+def get_reactions(
+    self,
+    message_id: str
+) -> Dict[str, List[str]]
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `message_id` | str | Yes | None | ID of the message to get reactions for |
+
+#### Returns
+
+Dictionary mapping emoji to list of user IDs, or empty dict if message not found.
+
+#### Example
+
+```python
+reactions = thread.get_reactions("msg_123")
+# Example: {":thumbsup:": ["user1", "user2"], ":heart:": ["user1"]}
 ```
 
 ### get_messages_for_chat_completion
@@ -99,14 +215,14 @@ Returns the most recent message with the specified role, or None if no messages 
 
 ### generate_title
 
-Generate a concise title for the thread using GPT-4o.
+Generate a concise title for the thread using GPT-4.1.
 
 ```python
 @weave.op()
 def generate_title(self) -> str
 ```
 
-Uses GPT-4o to generate a descriptive title based on the conversation content.
+Uses GPT-4.1 to generate a descriptive title based on the conversation content.
 Updates the thread's title and `updated_at` timestamp.
 
 ### get_total_tokens
@@ -253,8 +369,82 @@ Returns:
     "created_at": str,       # ISO format with timezone if mode="json"
     "updated_at": str,       # ISO format with timezone if mode="json"
     "attributes": Dict,
-    "source": Optional[Dict]
+    "platforms": Optional[Dict]
 }
+```
+
+## Message Reactions
+
+The Thread API provides methods for managing reactions to messages. While reactions are associated with specific messages, they are managed at the thread level to maintain consistency and provide centralized access.
+
+### Adding Reactions
+
+To add a reaction to a message:
+
+```python
+# Add a reaction to a message
+thread.add_reaction(message_id, ":heart:", "user123")
+```
+
+The `add_reaction` method takes three parameters:
+- `message_id`: The ID of the message being reacted to
+- `emoji`: The emoji reaction (in standard format, e.g., ":heart:", ":thumbsup:")
+- `user_id`: The ID of the user adding the reaction
+
+### Retrieving Reactions
+
+To get all reactions for a specific message:
+
+```python
+# Get all reactions for a message
+reactions = thread.get_reactions(message_id)
+print(reactions)
+# Output: {":heart:": ["user123", "user456"], ":thumbsup:": ["user789"]}
+```
+
+### Checking for Reactions
+
+To check if a specific user has added a particular reaction:
+
+```python
+# Check if a user has reacted with a specific emoji
+has_reaction = thread.has_reaction(message_id, ":heart:", "user123")
+print(has_reaction)  # Output: True or False
+```
+
+### Removing Reactions
+
+To remove a specific reaction:
+
+```python
+# Remove a reaction
+thread.remove_reaction(message_id, ":heart:", "user123")
+```
+
+### Getting Reaction Counts
+
+To get a count of each reaction type for a message:
+
+```python
+# Get reaction counts
+reactions = thread.get_reactions(message_id)
+reaction_counts = {emoji: len(users) for emoji, users in reactions.items()}
+print(reaction_counts)
+# Output: {":heart:": 2, ":thumbsup:": 1}
+```
+
+### Getting All Users Who Reacted
+
+To get a list of all users who have reacted to a message:
+
+```python
+# Get all users who reacted to a message
+reactions = thread.get_reactions(message_id)
+all_users = set()
+for users in reactions.values():
+    all_users.update(users)
+print(list(all_users))
+# Output: ["user123", "user456", "user789"]
 ```
 
 ## Field Validators
@@ -290,8 +480,8 @@ Converts naive datetime objects to UTC timezone-aware ones.
    print(f"Average latency: {timing['average_latency']} ms")
    
    # Get model-specific usage
-   model_usage = thread.get_model_usage("gpt-4o")
-   print(f"GPT-4o calls: {model_usage['calls']}")
+   model_usage = thread.get_model_usage("gpt-4.1")
+   print(f"GPT-4.1 calls: {model_usage['calls']}")
    
    # Track tool usage
    tool_usage = thread.get_tool_usage()
@@ -308,15 +498,19 @@ Converts naive datetime objects to UTC timezone-aware ones.
    
    # Get the system message
    system_msg = thread.get_system_message()
+   
+   # Find a specific message by ID
+   message = thread.get_message_by_id(message_id)
    ```
 
 4. **Source Tracking**
    ```python
    thread = Thread(
-       source={
-           "name": "slack",
-           "channel": "C123",
-           "thread_ts": "1234567890.123"
+       platforms={
+           "slack": {
+               "channel": "C123",
+               "thread_ts": "1234567890.123"
+           }
        }
    )
    ```
@@ -329,6 +523,20 @@ Converts naive datetime objects to UTC timezone-aware ones.
    # If messages have attachments, provide a file_store
    file_store = FileStore()
    messages = await thread.get_messages_for_chat_completion(file_store=file_store)
+   ```
+
+6. **Managing Reactions**
+   ```python
+   # Add reactions to messages
+   message_ids = [msg.id for msg in thread.messages if msg.role == "assistant"]
+   for message_id in message_ids:
+       thread.add_reaction(message_id, ":thumbsup:", "user1")
+   
+   # Check reaction counts for display
+   for message_id in message_ids:
+       reactions = thread.get_reactions(message_id)
+       thumbs_count = len(reactions.get(":thumbsup:", []))
+       print(f"Message {message_id}: 👍 {thumbs_count}")
    ```
 
 ## See Also

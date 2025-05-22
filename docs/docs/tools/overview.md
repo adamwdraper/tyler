@@ -213,7 +213,7 @@ custom_calculator = {
 
 # Initialize agent with both built-in and custom tools
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with various tasks",
     tools=[
         "web",              # Built-in tools

@@ -1,9 +1,7 @@
 import pytest
 from datetime import datetime, UTC
-from tyler.models.message import Message, TextContent, ImageContent
-from tyler.models.attachment import Attachment
-import json
-import base64
+from tyler import Message, Attachment
+from tyler.models.message import TextContent, ImageContent
 from unittest.mock import patch, Mock, AsyncMock
 import pydantic
 
@@ -17,7 +15,7 @@ def sample_message():
         attributes={"sentiment": "positive"},
         timestamp=datetime.now(UTC),
         metrics={
-            "model": "gpt-4o",
+            "model": "gpt-4.1",
             "timing": {
                 "started_at": "2024-02-07T00:00:00+00:00",
                 "ended_at": "2024-02-07T00:00:01+00:00",
@@ -43,7 +41,7 @@ def test_message_creation(sample_message):
     assert sample_message.attributes == {"sentiment": "positive"}
     assert isinstance(sample_message.timestamp, datetime)
     assert sample_message.timestamp.tzinfo == UTC
-    assert sample_message.metrics["model"] == "gpt-4o"
+    assert sample_message.metrics["model"] == "gpt-4.1"
     assert sample_message.metrics["weave_call"]["id"] == "call-123"
 
 def test_message_with_multimodal_content():
@@ -104,7 +102,7 @@ def test_message_serialization(sample_message):
     assert data["attachments"][0]["attributes"]["type"] == "text"
     
     # Test metrics serialization
-    assert data["metrics"]["model"] == "gpt-4o"
+    assert data["metrics"]["model"] == "gpt-4.1"
     assert data["metrics"]["weave_call"]["id"] == "call-123"
     assert data["metrics"]["timing"]["latency"] == 1000.0  # 1 second = 1000 milliseconds
     assert data["metrics"]["usage"]["total_tokens"] == 15
@@ -416,21 +414,12 @@ def test_message_with_tool_calls():
 def test_message_with_source():
     """Test message with source information"""
     source = {
-        "entity": {
-            "id": "U123456",
-            "name": "John Doe",
-            "type": "user",
-            "attributes": {
-                "email": "john.doe@example.com",
-                "user_id": "U123456"
-            }
-        },
-        "platform": {
-            "name": "slack",
-            "attributes": {
-                "channel": "general",
-                "thread_ts": "1234567890.123456"
-            }
+        "id": "U123456",
+        "name": "John Doe",
+        "type": "user",
+        "attributes": {
+            "email": "john.doe@example.com",
+            "user_id": "U123456"
         }
     }
     
@@ -441,10 +430,10 @@ def test_message_with_source():
     )
     
     assert message.source == source
-    assert message.source["entity"]["type"] == "user"
-    assert message.source["entity"]["id"] == "U123456"
-    assert message.source["platform"]["name"] == "slack"
-    assert message.source["platform"]["attributes"]["channel"] == "general"
+    assert message.source["type"] == "user"
+    assert message.source["id"] == "U123456"
+    assert message.source["name"] == "John Doe"
+    assert message.source["attributes"]["email"] == "john.doe@example.com"
 
 def test_message_with_metrics():
     """Test message with metrics"""
@@ -517,7 +506,7 @@ def test_message_default_metrics():
 def test_message_custom_metrics():
     """Test setting custom metrics values"""
     custom_metrics = {
-        "model": "gpt-4o",
+        "model": "gpt-4.1",
         "timing": {
             "started_at": "2024-02-10T12:00:00Z",
             "ended_at": "2024-02-10T12:00:01Z",
@@ -541,7 +530,7 @@ def test_message_custom_metrics():
     )
     
     # Verify all metrics values
-    assert message.metrics["model"] == "gpt-4o"
+    assert message.metrics["model"] == "gpt-4.1"
     assert message.metrics["timing"]["started_at"] == "2024-02-10T12:00:00Z"
     assert message.metrics["timing"]["ended_at"] == "2024-02-10T12:00:01Z"
     assert message.metrics["timing"]["latency"] == 1000.0
@@ -554,7 +543,7 @@ def test_message_custom_metrics():
 def test_message_metrics_serialization():
     """Test that metrics are properly serialized and deserialized"""
     original_metrics = {
-        "model": "gpt-4o",
+        "model": "gpt-4.1",
         "timing": {
             "started_at": "2024-02-10T12:00:00+00:00",
             "ended_at": "2024-02-10T12:00:01+00:00",
@@ -596,7 +585,7 @@ def test_message_metrics_serialization():
 def test_message_partial_metrics():
     """Test handling of partial metrics data"""
     partial_metrics = {
-        "model": "gpt-4o",
+        "model": "gpt-4.1",
         "timing": {
             "latency": 1000.0  # Only providing latency
         },
@@ -612,7 +601,7 @@ def test_message_partial_metrics():
     )
     
     # Verify only the provided values are set
-    assert message.metrics["model"] == "gpt-4o"
+    assert message.metrics["model"] == "gpt-4.1"
     assert message.metrics["timing"]["latency"] == 1000.0
     assert message.metrics["usage"]["total_tokens"] == 200
     
@@ -624,7 +613,7 @@ def test_message_partial_metrics():
 def test_message_metrics_in_chat_completion():
     """Test that metrics are properly handled when converting to chat completion format"""
     metrics = {
-        "model": "gpt-4o",
+        "model": "gpt-4.1",
         "timing": {
             "started_at": "2024-02-10T12:00:00Z",
             "ended_at": "2024-02-10T12:00:01Z",
@@ -844,3 +833,75 @@ async def test_ensure_attachments_stored_with_existing_processed_content():
         assert message.attachments[0].attributes["overview"] == "A test file"
         assert "url" in message.attachments[0].attributes
         assert message.attachments[0].attributes["url"] == "/files//path/to/stored/file.txt"
+
+def test_message_reactions():
+    """Test message reactions functionality"""
+    # Create a message
+    message = Message(
+        role="assistant",
+        content="This is a great answer!"
+    )
+    
+    # Check initial state
+    assert message.reactions == {}
+    assert message.get_reactions() == {}
+    assert message.get_reaction_counts() == {}
+    
+    # Add reactions
+    assert message.add_reaction(":thumbsup:", "user1") == True
+    assert message.add_reaction(":thumbsup:", "user2") == True
+    assert message.add_reaction(":heart:", "user1") == True
+    
+    # Check reactions state
+    assert len(message.reactions) == 2
+    assert len(message.reactions[":thumbsup:"]) == 2
+    assert len(message.reactions[":heart:"]) == 1
+    assert "user1" in message.reactions[":thumbsup:"]
+    assert "user2" in message.reactions[":thumbsup:"]
+    assert "user1" in message.reactions[":heart:"]
+    
+    # Check reaction methods
+    assert message.get_reactions() == {
+        ":thumbsup:": ["user1", "user2"],
+        ":heart:": ["user1"]
+    }
+    
+    assert message.get_reaction_counts() == {
+        ":thumbsup:": 2,
+        ":heart:": 1
+    }
+    
+    # Test duplicate reaction (should return False)
+    assert message.add_reaction(":thumbsup:", "user1") == False
+    assert len(message.reactions[":thumbsup:"]) == 2  # Count should not change
+    
+    # Test reaction removal
+    assert message.remove_reaction(":heart:", "user1") == True
+    assert ":heart:" not in message.reactions  # Empty reactions should be removed
+    assert message.get_reaction_counts() == {":thumbsup:": 2}
+    
+    # Test removing non-existent reaction
+    assert message.remove_reaction(":heart:", "user1") == False
+    assert message.remove_reaction(":thumbsup:", "user3") == False
+
+def test_message_serialization_with_reactions(sample_message):
+    """Test serialization of messages with reactions"""
+    # Add reactions to the message
+    sample_message.add_reaction(":thumbsup:", "user1")
+    sample_message.add_reaction(":thumbsup:", "user2")
+    sample_message.add_reaction(":heart:", "user1")
+    
+    # Test serialization
+    data = sample_message.model_dump()
+    assert "reactions" in data
+    assert len(data["reactions"]) == 2
+    assert data["reactions"][":thumbsup:"] == ["user1", "user2"]
+    assert data["reactions"][":heart:"] == ["user1"]
+    
+    # Convert timestamp back to datetime for validation
+    data["timestamp"] = datetime.fromisoformat(data["timestamp"])
+    
+    # Test deserialization
+    new_message = Message.model_validate(data)
+    assert new_message.reactions == sample_message.reactions
+    assert new_message.get_reaction_counts() == {":thumbsup:": 2, ":heart:": 1}

@@ -8,9 +8,7 @@ In this example, we'll create a custom translator tool and use it with streaming
 
 ```python
 from dotenv import load_dotenv
-from tyler.models.agent import Agent, StreamUpdate
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler.models.agent import Agent, StreamUpdate, Thread, Message
 import asyncio
 import logging
 
@@ -79,7 +77,7 @@ custom_translator_tool = {
 
 # Initialize the agent
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with translations and web searches",
     tools=[
         "web",                     # Load the web tools module

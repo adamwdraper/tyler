@@ -14,8 +14,7 @@ import os
 import asyncio
 import weave
 import sys
-from tyler.models.agent import Agent, StreamUpdate
-from tyler.models.thread import Thread, Message
+from tyler import Agent, Thread, Message, StreamUpdate
 
 def custom_calculator_implementation(operation: str, x: float, y: float) -> str:
     """
@@ -79,7 +78,7 @@ except Exception as e:
 
 # Initialize the agent with both built-in and custom tools
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with calculations and web searches",
     tools=[
         "web",                    # Load the web tools module

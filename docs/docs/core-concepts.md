@@ -10,7 +10,7 @@ This guide explains the core concepts and components that make up Tyler's archit
 
 The `Agent` class is the central component of Tyler. It:
 - Manages conversations through threads
-- Processes messages using LLMs (with GPT-4o as default)
+- Processes messages using LLMs (with GPT-4.1 as default)
 - Executes tools when needed
 - Maintains conversation state
 - Supports streaming responses
@@ -22,10 +22,10 @@ The `Agent` class is the central component of Tyler. It:
 ### Basic usage
 
 ```python
-from tyler.models.agent import Agent
+from tyler import Agent
 
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     temperature=0.7,
     purpose="To help with tasks",
     tools=["web", "slack", "notion"]
@@ -109,18 +109,19 @@ Threads represent conversations and maintain:
 ### Creating threads
 
 ```python
-from tyler.models.thread import Thread
+from tyler import Thread
 
 # Basic thread
 thread = Thread()
 
-# Thread with title and source
+# Thread with title and platforms
 thread = Thread(
     title="Support Conversation",
-    source={
-        "name": "slack",
-        "channel": "C123",
-        "thread_ts": "1234567890.123"
+    platforms={
+        "slack": {
+            "channel": "C123",
+            "thread_ts": "1234567890.123"
+        }
     }
 )
 
@@ -202,7 +203,7 @@ Messages are the basic units of conversation. They contain:
 ### Creating messages
 
 ```python
-from tyler.models.message import Message
+from tyler import Message
 
 # Basic text message
 message = Message(
@@ -236,8 +237,12 @@ message = Message(
         "priority": "high"
     },
     source={
-        "name": "slack",
-        "thread_id": "123456"
+        "id": "U123456",
+        "name": "John Doe",
+        "type": "user",
+        "attributes": {
+            "email": "john.doe@example.com"
+        }
     }
 )
 
@@ -265,7 +270,7 @@ Messages automatically track various metrics:
 ```python
 # Message metrics structure
 message.metrics = {
-    "model": "gpt-4o",          # Model used for generation
+    "model": "gpt-4.1",          # Model used for generation
     "timing": {
         "started_at": "2024-02-26T12:00:00Z",
         "ended_at": "2024-02-26T12:00:01Z",
@@ -320,7 +325,7 @@ Attachments handle files in conversations:
 ### Creating attachments
 
 ```python
-from tyler.models.attachment import Attachment
+from tyler import Attachment
 
 # From binary content
 attachment = Attachment(
@@ -425,7 +430,7 @@ from tyler.tools import (
 ### Using Built-in Tools
 
 ```python
-from tyler.models.agent import Agent
+from tyler import Agent
 
 # Use specific tool modules
 agent = Agent(
@@ -620,7 +625,7 @@ Thread storage handles conversation persistence and retrieval through a unified 
 
 ```python
 # Factory pattern for thread store creation
-from tyler.database.thread_store import ThreadStore
+from tyler import ThreadStore
 
 # In-memory storage
 store = await ThreadStore.create()  # Connects immediately, validates configuration
@@ -633,8 +638,16 @@ store = await ThreadStore.create("postgresql+asyncpg://user:pass@localhost/dbnam
 store = await ThreadStore.create("sqlite+aiosqlite:///path/to/db.sqlite")
 # Connects immediately, validates file access
 
-# Use with agent
-agent = Agent(thread_store=store)
+# Register stores
+from tyler.utils.registry import register_thread_store, register_file_store
+thread_store = await ThreadStore.create() # or with DB URL
+file_store = await FileStore.create() # or with path
+register_thread_store("default", thread_store)
+register_file_store("default", file_store)
+
+# Initialize agent and set stores
+agent = Agent(model_name="gpt-4.1", purpose="To help with tasks")
+agent.set_stores(thread_store_name="default", file_store_name="default")
 ```
 
 #### Memory Backend
@@ -692,8 +705,8 @@ threads = await store.find_by_attributes({
     "priority": "high"
 })
 
-# Find by source
-threads = await store.find_by_source(
+# Find by platform
+threads = await store.find_by_platform(
     "slack",
     {"channel": "C123", "thread_ts": "123.456"}
 )
@@ -704,7 +717,7 @@ threads = await store.find_by_source(
 Tyler provides a unified `FileStore` class for file storage and retrieval. Files are automatically stored and processed when attached to messages.
 
 ```python
-from tyler.storage.file_store import FileStore
+from tyler import FileStore
 
 # Create a file store instance with factory pattern (validates settings immediately)
 file_store = await FileStore.create(
@@ -716,13 +729,20 @@ file_store = await FileStore.create(
 # Or use default settings from environment variables
 file_store = await FileStore.create()
 
-# Pass file_store to Agent
+# Register stores (if not done already)
+# from tyler.utils.registry import register_thread_store, register_file_store
+# thread_store = await ThreadStore.create() # or with DB URL
+# file_store = await FileStore.create() # or with path
+# register_thread_store("default", thread_store)
+# register_file_store("default", file_store)
+
+# Initialize agent and set stores
 agent = Agent(
-    model_name="gpt-4o",
-    purpose="To help with tasks",
-    thread_store=thread_store,
-    file_store=file_store  # Explicitly pass file_store instance
+    model_name="gpt-4.1",
+    purpose="To help with tasks"
+    # No direct store parameters here
 )
+agent.set_stores(thread_store_name="default", file_store_name="default")
 
 # When handling attachments
 message = Message(role="user", content="Here's a file")
@@ -890,11 +910,11 @@ Tyler supports multiple MCP transport protocols:
 MCP tools can be used with Tyler agents:
 
 ```python
-from tyler.models.agent import Agent
+from tyler import Agent
 
 # Create agent with MCP tools
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     tools=["mcp"],
     config={
         "mcp": {

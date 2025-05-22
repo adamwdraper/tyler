@@ -14,8 +14,7 @@ import os
 import asyncio
 import weave
 import sys
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread, Message
+from tyler import Agent, Thread, Message
 
 try:
     if os.getenv("WANDB_API_KEY"):
@@ -26,7 +25,7 @@ except Exception as e:
 
 # Initialize the agent
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To be a helpful assistant.",
     temperature=0.7
 )

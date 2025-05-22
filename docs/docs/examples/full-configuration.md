@@ -19,10 +19,7 @@ The example shows:
 
 ```python
 from dotenv import load_dotenv
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
-from tyler.database.thread_store import ThreadStore
+from tyler import Agent, Thread, Message, ThreadStore
 import asyncio
 import weave
 import os
@@ -72,7 +69,7 @@ thread_store = ThreadStore()
 # Initialize agent with all available configuration options
 agent = Agent(
     # Core LLM settings
-    model_name="gpt-4o",          # The LLM model to use
+    model_name="gpt-4.1",          # The LLM model to use
     temperature=0.7,              # Controls randomness in responses (0.0 to 1.0)
     
     # Agent identity and behavior
@@ -134,7 +131,7 @@ if __name__ == "__main__":
 ### 1. LLM Settings
 ```python
 agent = Agent(
-    model_name="gpt-4o",     # Model to use
+    model_name="gpt-4.1",     # Model to use
     temperature=0.7,         # Response creativity
 )
 ```

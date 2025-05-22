@@ -6,9 +6,7 @@ a main coordinator agent which can delegate tasks to them.
 """
 import asyncio
 import os
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message
 from tyler.utils.agent_runner import agent_runner
 from tyler.utils.logging import get_logger
 import weave
@@ -30,21 +28,21 @@ async def main():
     # Create specialized agents
     research_agent = Agent(
         name="Research",  # Using simple, unique names
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To conduct in-depth research on topics and provide comprehensive information.",
         tools=["web"]  # Give research agent web search tools
     )
     
     code_agent = Agent(
         name="Code",  # Using simple, unique names
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To write, review, and explain code in various programming languages.",
         tools=[]  # No additional tools needed for coding
     )
     
     creative_agent = Agent(
         name="Creative",  # Using simple, unique names
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To generate creative content such as stories, poems, and marketing copy.",
         tools=[]  # No additional tools needed for creative writing
     )
@@ -52,7 +50,7 @@ async def main():
     # Create main agent with specialized agents as a list
     main_agent = Agent(
         name="Coordinator",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To coordinate work by delegating tasks to specialized agents when appropriate.",
         tools=[],  # No additional tools needed since agents will be added as tools
         agents=[research_agent, code_agent, creative_agent]  # Simple list instead of dictionary

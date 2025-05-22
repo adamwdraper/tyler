@@ -7,14 +7,15 @@ import os
 from pathlib import Path
 import tempfile
 import asyncio
-from sqlalchemy import create_engine, select, cast, String, text
+from sqlalchemy import create_engine, select, cast, String, text, bindparam
 from sqlalchemy.orm import sessionmaker, selectinload
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+# Direct imports
 from tyler.models.thread import Thread
 from tyler.models.message import Message
 from tyler.models.attachment import Attachment
-from tyler.utils.logging import get_logger
 from tyler.storage.file_store import FileStore
+from tyler.utils.logging import get_logger
 from .models import Base, ThreadRecord, MessageRecord
 
 logger = get_logger(__name__)
@@ -53,8 +54,8 @@ class StorageBackend(ABC):
         pass
     
     @abstractmethod
-    async def find_by_source(self, source_name: str, properties: Dict[str, Any]) -> List[Thread]:
-        """Find threads by source name and properties."""
+    async def find_by_platform(self, platform_name: str, properties: Dict[str, Any]) -> List[Thread]:
+        """Find threads by platform name and properties in the platforms structure."""
         pass
     
     @abstractmethod
@@ -63,8 +64,19 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    async def find_messages_by_attribute(self, path: str, value: Any) -> bool:
-        """Check if any messages exist with a specific attribute at a JSON path."""
+    async def find_messages_by_attribute(self, path: str, value: Any) -> List[MessageRecord]:
+        """
+        Find messages that have a specific attribute at a given JSON path.
+        Uses efficient SQL JSON path queries for PostgreSQL and falls back to
+        SQLite JSON functions when needed.
+        
+        Args:
+            path: Dot-notation path to the attribute (e.g., "source.platform.attributes.ts")
+            value: The value to search for
+            
+        Returns:
+            List of messages matching the criteria (possibly empty)
+        """
         pass
 
 class MemoryBackend(StorageBackend):
@@ -107,14 +119,14 @@ class MemoryBackend(StorageBackend):
                 matching_threads.append(thread)
         return matching_threads
     
-    async def find_by_source(self, source_name: str, properties: Dict[str, Any]) -> List[Thread]:
+    async def find_by_platform(self, platform_name: str, properties: Dict[str, Any]) -> List[Thread]:
         matching_threads = []
         for thread in self._threads.values():
-            source = getattr(thread, 'source', {})
+            platforms = getattr(thread, 'platforms', {})
             if (
-                isinstance(source, dict) and 
-                source.get('name') == source_name and
-                all(source.get(k) == v for k, v in properties.items())
+                isinstance(platforms, dict) and
+                platform_name in platforms and
+                all(platforms[platform_name].get(k) == v for k, v in properties.items())
             ):
                 matching_threads.append(thread)
         return matching_threads
@@ -126,7 +138,7 @@ class MemoryBackend(StorageBackend):
             threads = threads[:limit]
         return threads
 
-    async def find_messages_by_attribute(self, path: str, value: Any) -> bool:
+    async def find_messages_by_attribute(self, path: str, value: Any) -> List[MessageRecord]:
         """
         Check if any messages exist with a specific attribute at a given JSON path.
         
@@ -154,9 +166,9 @@ class MemoryBackend(StorageBackend):
                 
                 # Check if we found a match
                 if current == value:
-                    return True
+                    return [self._create_message_record(message, thread.id, 0)]
         
-        return False
+        return []
 
 class SQLBackend(StorageBackend):
     """SQL storage backend supporting both SQLite and PostgreSQL with proper connection pooling."""
@@ -234,7 +246,9 @@ class SQLBackend(StorageBackend):
             attributes=msg_record.attributes,
             timestamp=msg_record.timestamp,
             source=msg_record.source,
-            metrics=msg_record.metrics
+            platforms=msg_record.platforms or {},
+            metrics=msg_record.metrics,
+            reactions=msg_record.reactions or {}
         )
         if msg_record.attachments:
             message.attachments = [Attachment(**a) for a in msg_record.attachments]
@@ -246,14 +260,14 @@ class SQLBackend(StorageBackend):
             id=record.id,
             title=record.title,
             attributes=record.attributes,
-            source=record.source,
+            platforms=record.platforms or {},
             created_at=record.created_at,
             updated_at=record.updated_at,
             messages=[]
         )
         # Sort messages: system messages first, then others by sequence
         sorted_messages = sorted(record.messages, 
-            key=lambda m: (0 if m.role == "system" else 1, m.sequence))
+            key=lambda m: (0 if m.role == "system" else 1, m.sequence or 0))
         for msg_record in sorted_messages:
             message = self._create_message_from_record(msg_record)
             thread.messages.append(message)
@@ -273,8 +287,10 @@ class SQLBackend(StorageBackend):
             attributes=message.attributes,
             timestamp=message.timestamp,
             source=message.source,
+            platforms=message.platforms,
             attachments=[a.model_dump() for a in message.attachments] if message.attachments else None,
-            metrics=message.metrics
+            metrics=message.metrics,
+            reactions=message.reactions
         )
     
     async def _get_session(self) -> AsyncSession:
@@ -297,6 +313,9 @@ class SQLBackend(StorageBackend):
         file_store = FileStore()
         
         try:
+            # Log the platforms data being saved
+            logger.info(f"SQLBackend.save: Attempting to save thread {thread.id}. Platforms data: {json.dumps(thread.platforms if thread.platforms is not None else {})}")
+            
             # First process and store all attachments
             logger.info(f"Starting to process attachments for thread {thread.id}")
             try:
@@ -323,7 +342,7 @@ class SQLBackend(StorageBackend):
                     # Update existing thread
                     thread_record.title = thread.title
                     thread_record.attributes = thread.attributes
-                    thread_record.source = thread.source
+                    thread_record.platforms = thread.platforms
                     thread_record.updated_at = datetime.now(UTC)
                     thread_record.messages = []  # Clear existing messages
                 else:
@@ -332,7 +351,7 @@ class SQLBackend(StorageBackend):
                         id=thread.id,
                         title=thread.title,
                         attributes=thread.attributes,
-                        source=thread.source,
+                        platforms=thread.platforms,
                         created_at=thread.created_at,
                         updated_at=thread.updated_at,
                         messages=[]
@@ -355,6 +374,7 @@ class SQLBackend(StorageBackend):
                 session.add(thread_record)
                 try:
                     await session.commit()
+                    logger.info(f"Thread {thread.id} successfully committed to database.")
                 except Exception as e:
                     # For test compatibility - convert database errors to RuntimeError
                     # This helps maintain backward compatibility with tests expecting RuntimeError
@@ -436,8 +456,9 @@ class SQLBackend(StorageBackend):
                         
                         # Use PostgreSQL's JSONB operators for direct string comparison
                         param_name = f"attr_{key}"
+                        bp = bindparam(param_name, str_value)
                         query = query.where(
-                            text(f"attributes->>'{key}' = :{param_name}").bindparams(**{param_name: str_value})
+                            text(f"attributes->>'{key}' = :{param_name}").bindparams(bp)
                         )
             
             # Log the final query for debugging
@@ -453,31 +474,38 @@ class SQLBackend(StorageBackend):
         finally:
             await session.close()
 
-    async def find_by_source(self, source_name: str, properties: Dict[str, Any]) -> List[Thread]:
-        """Find threads by source name and properties."""
+    async def find_by_platform(self, platform_name: str, properties: Dict[str, Any]) -> List[Thread]:
+        """Find threads by platform name and properties in the platforms structure."""
         session = await self._get_session()
         try:
             query = select(ThreadRecord).options(selectinload(ThreadRecord.messages))
             
             if self.database_url.startswith('sqlite'):
-                # Use SQLite json_extract for source name
-                query = query.where(text("json_extract(source, '$.name') = :name").bindparams(name=source_name))
+                # Use SQLite json_extract for platform name
+                query = query.where(text(f"json_extract(platforms, '$.{platform_name}') IS NOT NULL"))
                 # Add property conditions
                 for key, value in properties.items():
-                    query = query.where(text(f"json_extract(source, '$.{key}') = :value_{key}").bindparams(**{f"value_{key}": str(value)}))
+                    # Convert value to string for text comparison
+                    str_value = str(value)
+                    param_name = f"value_{platform_name}_{key}" # Ensure unique param name
+                    bp = bindparam(param_name, str_value)
+                    query = query.where(
+                        text(f"json_extract(platforms, '$.{platform_name}.{key}') = :{param_name}")
+                        .bindparams(bp)
+                    )
             else:
-                # Use PostgreSQL JSONB operators via text() to ensure proper SQL generation
-                query = query.where(text("source->>'name' = :source_name").bindparams(source_name=source_name))
+                # Use PostgreSQL JSONB operators for platform checks
+                query = query.where(text(f"platforms ? '{platform_name}'"))
                 
                 # Add property conditions with text() for proper PostgreSQL JSONB syntax
                 for key, value in properties.items():
                     # Log the query parameters for debugging
-                    logger.info(f"Searching for source[{key}] = {value} (type: {type(value)})")
+                    logger.info(f"Searching for platforms[{platform_name}][{key}] = {value} (type: {type(value)})")
                     
                     # Handle different value types appropriately
                     if value is None:
                         # Check for null/None values
-                        query = query.where(text(f"source->>'{key}' IS NULL"))
+                        query = query.where(text(f"platforms->'{platform_name}'->'{key}' IS NULL"))
                     else:
                         # Convert value to string for text comparison
                         str_value = str(value)
@@ -485,21 +513,23 @@ class SQLBackend(StorageBackend):
                             # Convert boolean to lowercase string
                             str_value = str(value).lower()
                         
-                        # Use PostgreSQL's JSONB operators for direct string comparison
-                        param_name = f"source_{key}"
+                        # Use PostgreSQL's JSONB ->> operator to extract as text for comparison
+                        param_name = f"platform_{platform_name}_{key}"
+                        bp = bindparam(param_name, str_value)
                         query = query.where(
-                            text(f"source->>'{key}' = :{param_name}").bindparams(**{param_name: str_value})
+                            text(f"platforms->'{platform_name}'->>'{key}' = :{param_name}")
+                            .bindparams(bp)
                         )
             
             # Log the final query for debugging
-            logger.info(f"Executing find_by_source query: {query}")
+            logger.info(f"Executing find_by_platform query: {query}")
             
             result = await session.execute(query)
             threads = [self._create_thread_from_record(record) for record in result.scalars().all()]
             logger.info(f"Found {len(threads)} matching threads")
             return threads
         except Exception as e:
-            logger.error(f"Error in find_by_source: {str(e)}")
+            logger.error(f"Error in find_by_platform: {str(e)}")
             raise
         finally:
             await session.close()
@@ -518,9 +548,9 @@ class SQLBackend(StorageBackend):
         finally:
             await session.close()
 
-    async def find_messages_by_attribute(self, path: str, value: Any) -> bool:
+    async def find_messages_by_attribute(self, path: str, value: Any) -> List[MessageRecord]:
         """
-        Check if any messages exist with a specific attribute at a given JSON path.
+        Find messages that have a specific attribute at a given JSON path.
         Uses efficient SQL JSON path queries for PostgreSQL and falls back to
         SQLite JSON functions when needed.
         
@@ -529,7 +559,7 @@ class SQLBackend(StorageBackend):
             value: The value to search for
             
         Returns:
-            True if any messages match, False otherwise
+            List of messages matching the criteria (possibly empty)
         """
         session = await self._get_session()
         try:
@@ -541,30 +571,51 @@ class SQLBackend(StorageBackend):
             
             # Build query based on database type
             if self.database_url.startswith('sqlite'):
-                # Build SQLite JSON path (SQLite uses $ as root)
-                sqlite_path = "$"
-                for part in path_parts:
-                    sqlite_path += f".{part}"
+                # Get the first part of the path to determine which JSON column to search
+                path_parts = path.split('.')
+                root = path_parts[0]
                 
-                # Use SQLite's json_extract function
-                query = text(f"""
-                    SELECT COUNT(*) FROM messages 
-                    WHERE json_extract(source, :path) = :value
-                """).bindparams(path=sqlite_path, value=str_value)
+                # All JSON columns in the MessageRecord model
+                json_columns = ["attributes", "source", "platforms", "attachments", "tool_calls", "metrics", "reactions"]
+                
+                # Check if the root is a valid JSON column
+                if root in json_columns:
+                    # Build SQLite JSON path (SQLite uses $ as root)
+                    sqlite_path = "$"
+                    for part in path_parts:
+                        sqlite_path += f".{part}"
+                    
+                    # Log the query for debugging
+                    logger.info(f"SQLite: Searching for JSON path: {path} = '{str_value}' using json_extract({root}, '{sqlite_path}')")
+                    
+                    # Use SQLite's json_extract function
+                    query = text(f"""
+                        SELECT id, thread_id, sequence, role, content, name, tool_call_id, tool_calls,
+                               attributes, timestamp, source, attachments, metrics, reactions, platforms 
+                        FROM messages 
+                        WHERE json_extract({root}, :path) = :value
+                    """).bindparams(path=sqlite_path, value=str_value)
+                else:
+                    # For non-JSON columns or unrecognized paths
+                    logger.warning(f"Unrecognized JSON path root: {root} - not a valid JSON column in messages table")
+                    query = text(f"""
+                        SELECT id, thread_id, sequence, role, content, name, tool_call_id, tool_calls,
+                               attributes, timestamp, source, attachments, metrics, reactions, platforms 
+                        FROM messages 
+                        WHERE id = 'no_match_placeholder'
+                    """)  # This will return 0 matches
             else:
                 # PostgreSQL JSON path
                 # Start with the first part to determine which JSON column to search
                 root = path_parts[0]
                 
-                # Determine which column to search based on the root
-                if root == "source":
-                    # PostgreSQL JSON path for nested attributes
-                    # For source.platform.attributes.ts, we need:
-                    # source->'platform'->'attributes'->>'ts'
-                    # The -> operator keeps the result as JSON for nesting
-                    # The ->> operator extracts the final value as text
-                    
-                    pg_path = "source"
+                # All JSON columns in the MessageRecord model
+                json_columns = ["attributes", "source", "platforms", "attachments", "tool_calls", "metrics", "reactions"]
+                
+                # Check if the root is a valid JSON column
+                if root in json_columns:
+                    # For any JSON column, build the appropriate PostgreSQL JSON path expression
+                    pg_path = root
                     for i, part in enumerate(path_parts[1:]):
                         if i == len(path_parts[1:]) - 1:
                             # Last part uses ->> to extract as text
@@ -575,27 +626,96 @@ class SQLBackend(StorageBackend):
                     
                     # Query using PostgreSQL JSON operators with proper nesting
                     query = text(f"""
-                        SELECT COUNT(*) FROM messages 
+                        SELECT id, thread_id, sequence, role, content, name, tool_call_id, tool_calls,
+                               attributes, timestamp, source, attachments, metrics, reactions, platforms 
+                        FROM messages 
                         WHERE {pg_path} = :value
                     """).bindparams(value=str_value)
+                    
+                    # Log the query for debugging
+                    logger.info(f"Searching for JSON path: {path} = '{str_value}' using query: {pg_path} = :value")
                 else:
-                    # For other columns or complex paths
-                    # This is a simplified implementation - for more complex paths,
-                    # you would need to build the PostgreSQL JSON path expressions accordingly
-                    logger.warning(f"Complex path: {path} - using simplified query")
+                    # For non-JSON columns or unrecognized paths
+                    logger.warning(f"Unrecognized JSON path root: {root} - not a valid JSON column in messages table")
                     query = text(f"""
-                        SELECT COUNT(*) FROM messages 
-                        WHERE source::text LIKE :search_pattern
-                    """).bindparams(search_pattern=f"%{str_value}%")
+                        SELECT id, thread_id, sequence, role, content, name, tool_call_id, tool_calls,
+                               attributes, timestamp, source, attachments, metrics, reactions, platforms 
+                        FROM messages 
+                        WHERE id = 'no_match_placeholder'
+                    """)  # This will return 0 matches
             
-            # Execute query and get count
+            # Execute query and get message records
             result = await session.execute(query)
-            count = result.scalar()
+            rows = result.fetchall()
             
-            # Return True if we found any messages
-            return count > 0
+            # Convert rows to MessageRecord objects
+            records = []
+            for row in rows:
+                # Create a MessageRecord from the row (mapping by column order)
+                record = MessageRecord(
+                    id=row[0],
+                    thread_id=row[1], 
+                    sequence=row[2],
+                    role=row[3],
+                    content=row[4],
+                    name=row[5],
+                    tool_call_id=row[6],
+                    tool_calls=row[7],
+                    attributes=row[8],
+                    timestamp=row[9],
+                    source=row[10],
+                    attachments=row[11],
+                    metrics=row[12],
+                    reactions=row[13],
+                    platforms=row[14]
+                )
+                records.append(record)
+            
+            # Log detailed results for debugging
+            if records:
+                logger.info(f"Found {len(records)} messages matching {path}={value}")
+                for idx, record in enumerate(records):
+                    logger.info(f"Match {idx+1}: Message ID {record.id} in thread {record.thread_id}, role={record.role}")
+            else:
+                logger.info(f"No messages found matching {path}={value}")
+            
+            return records
         except Exception as e:
             logger.error(f"Error in find_messages_by_attribute: {str(e)}")
-            return False  # On error, assume no match
+            return []  # Return empty list on error
         finally:
-            await session.close() 
+            await session.close()
+
+        
+    async def get_thread_by_message_id(self, message_id: str) -> Optional[Thread]:
+        """
+        Find a thread containing a specific message ID.
+        
+        Args:
+            message_id: The ID of the message to find
+            
+        Returns:
+            The Thread containing the message, or None if not found
+        """
+        async with await self._get_session() as session:
+            # First find the message record
+            query = select(MessageRecord).where(MessageRecord.id == message_id)
+            result = await session.execute(query)
+            message_record = result.scalars().first()
+            
+            if not message_record:
+                return None
+                
+            # Get the thread ID from the message record
+            thread_id = message_record.thread_id
+            
+            # Get the complete thread
+            query = select(ThreadRecord).where(ThreadRecord.id == thread_id)
+            query = query.options(selectinload(ThreadRecord.messages))
+            result = await session.execute(query)
+            thread_record = result.scalars().first()
+            
+            if not thread_record:
+                return None
+                
+            return self._create_thread_from_record(thread_record) 

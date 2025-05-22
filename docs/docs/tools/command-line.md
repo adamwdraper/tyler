@@ -153,7 +153,7 @@ from tyler.models import Agent, Thread, Message
 
 # Create an agent with command line tools
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with file operations",
     tools=["command_line"]
 )

@@ -9,12 +9,9 @@ os.environ["OPENAI_API_KEY"] = "dummy"
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock, call
 import json
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message, ThreadStore
 from tyler.utils.agent_runner import agent_runner
 from tyler.utils.tool_runner import tool_runner
-from tyler.database.thread_store import ThreadStore
 import types
 import asyncio
 
@@ -67,7 +64,7 @@ async def test_agent_registers_with_agent_runner():
     # Create an agent
     agent = Agent(
         name="TestAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Test purpose"
     )
     
@@ -77,13 +74,13 @@ async def test_agent_registers_with_agent_runner():
     # Create an agent with a child
     child_agent = Agent(
         name="ChildAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Child agent purpose"
     )
     
     parent_agent = Agent(
         name="ParentAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Parent agent purpose",
         agents=[child_agent]
     )
@@ -98,13 +95,13 @@ async def test_delegation_tools_created():
     # Create an agent with a child
     child_agent = Agent(
         name="ResearchAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Research agent purpose"
     )
     
     parent_agent = Agent(
         name="ParentAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Parent agent purpose",
         agents=[child_agent]
     )
@@ -123,26 +120,26 @@ async def test_multiple_child_agents():
     # Create multiple child agents
     research_agent = Agent(
         name="Research",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Research purpose"
     )
     
     code_agent = Agent(
         name="Code",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Code purpose"
     )
     
     creative_agent = Agent(
         name="Creative",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Creative purpose"
     )
     
     # Create parent agent with multiple children
     parent_agent = Agent(
         name="Coordinator",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Coordinator purpose",
         agents=[research_agent, code_agent, creative_agent]
     )
@@ -164,7 +161,7 @@ async def test_agent_delegation_tool_call(mock_litellm, mock_thread_store):
     # Create child agent
     child_agent = Agent(
         name="SpecialistAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Specialist purpose",
         thread_store=mock_thread_store
     )
@@ -172,7 +169,7 @@ async def test_agent_delegation_tool_call(mock_litellm, mock_thread_store):
     # Create parent agent
     parent_agent = Agent(
         name="MainAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Main purpose",
         agents=[child_agent],
         thread_store=mock_thread_store
@@ -259,7 +256,7 @@ async def test_delegation_with_context(mock_litellm, mock_thread_store):
     # Create child agent
     child_agent = Agent(
         name="ContextAwareAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Context-aware purpose",
         thread_store=mock_thread_store
     )
@@ -267,7 +264,7 @@ async def test_delegation_with_context(mock_litellm, mock_thread_store):
     # Create parent agent
     parent_agent = Agent(
         name="ContextProviderAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Context provider purpose",
         agents=[child_agent],
         thread_store=mock_thread_store
@@ -363,14 +360,14 @@ async def test_nested_agent_delegation(mock_litellm, mock_thread_store):
     # Create three-level agent hierarchy
     grandchild_agent = Agent(
         name="GrandchildAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Grandchild purpose",
         thread_store=mock_thread_store
     )
     
     child_agent = Agent(
         name="ChildAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Child purpose",
         agents=[grandchild_agent],
         thread_store=mock_thread_store
@@ -378,7 +375,7 @@ async def test_nested_agent_delegation(mock_litellm, mock_thread_store):
     
     parent_agent = Agent(
         name="ParentAgent",
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="Parent purpose",
         agents=[child_agent],
         thread_store=mock_thread_store

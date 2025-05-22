@@ -5,7 +5,8 @@ import hashlib
 import json
 from tyler.utils.logging import get_logger
 import base64
-from .attachment import Attachment
+# Direct imports
+from tyler.models.attachment import Attachment
 from tyler.storage.file_store import FileStore
 
 # Get configured logger
@@ -22,19 +23,11 @@ class TextContent(TypedDict):
     type: Literal["text"]
     text: str
 
-class PlatformSource(TypedDict, total=False):
-    name: str  # Name of the platform (slack, discord, etc.)
-    attributes: Optional[Dict[str, Any]]  # Platform-specific attributes
-
 class EntitySource(TypedDict, total=False):
     id: str  # Unique identifier for the entity
     name: str  # Human-readable name of the entity
     type: Literal["user", "agent", "tool"]  # Type of entity
     attributes: Optional[Dict[str, Any]]  # All other entity-specific attributes
-
-class MessageSource(TypedDict, total=False):
-    entity: Optional[EntitySource]  # Information about the entity that created the message
-    platform: Optional[PlatformSource]  # Information about the platform where the message was created
 
 class Message(BaseModel):
     """Represents a single message in a thread"""
@@ -50,8 +43,16 @@ class Message(BaseModel):
     tool_calls: Optional[list] = None  # For assistant messages
     attributes: Dict = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    source: Optional[MessageSource] = None  # Enhanced attribution for message sources
+    source: Optional[EntitySource] = None  # Creator information (who created this message)
+    platforms: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description="References to where this message exists on external platforms. Maps platform name to platform-specific identifiers."
+    )
     attachments: List[Attachment] = Field(default_factory=list)
+    reactions: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="Map of emoji to list of user IDs who reacted with that emoji"
+    )
     
     # Simple metrics structure
     metrics: Dict[str, Any] = Field(
@@ -114,15 +115,14 @@ class Message(BaseModel):
     def validate_source(cls, v):
         """Validate source field structure"""
         if v is not None:
-            # Validate entity if present
-            if "entity" in v and v["entity"] is not None:
-                if "type" in v["entity"] and v["entity"]["type"] not in ["user", "agent", "tool"]:
-                    raise ValueError("entity.type must be one of: user, agent, tool")
+            # Check if type field is present and valid
+            if "type" in v and v["type"] not in ["user", "agent", "tool"]:
+                raise ValueError("source.type must be one of: user, agent, tool")
                 
-            # Validate platform if present
-            if "platform" in v and v["platform"] is not None:
-                if "name" not in v["platform"]:
-                    raise ValueError("platform.name is required when platform is present")
+            # Ensure ID is present
+            if "id" not in v:
+                raise ValueError("source.id is required when source is present")
+                
         return v
 
     def __init__(self, **data):
@@ -221,7 +221,9 @@ class Message(BaseModel):
             "content": self.content,
             "timestamp": self.timestamp.isoformat() if mode == "json" else self.timestamp,
             "source": self.source,
-            "metrics": self.metrics
+            "platforms": self.platforms,
+            "metrics": self.metrics,
+            "reactions": self.reactions
         }
         
         if self.name:
@@ -344,6 +346,68 @@ class Message(BaseModel):
         else:
             raise ValueError("attachment must be either Attachment object or bytes")
 
+    def add_reaction(self, emoji: str, user_id: str) -> bool:
+        """Add a reaction to a message.
+        
+        Args:
+            emoji: Emoji shortcode (e.g., ":thumbsup:")
+            user_id: ID of the user adding the reaction
+            
+        Returns:
+            True if reaction was added, False if it already existed
+        """
+        logger.info(f"Message.add_reaction (msg_id={self.id}): Current reactions: {self.reactions}. Adding '{emoji}' for user '{user_id}'.")
+        if emoji not in self.reactions:
+            self.reactions[emoji] = []
+        
+        if user_id in self.reactions[emoji]:
+            logger.warning(f"Message.add_reaction (msg_id={self.id}): User '{user_id}' already reacted with '{emoji}'.")
+            return False # Indicate that reaction was not newly added because it already existed
+        
+        self.reactions[emoji].append(user_id)
+        logger.info(f"Message.add_reaction (msg_id={self.id}): Successfully added. Reactions now: {self.reactions}")
+        return True
+
+    def remove_reaction(self, emoji: str, user_id: str) -> bool:
+        """Remove a reaction from a message.
+        
+        Args:
+            emoji: Emoji shortcode (e.g., ":thumbsup:")
+            user_id: ID of the user removing the reaction
+            
+        Returns:
+            True if reaction was removed, False if it didn't exist
+        """
+        logger.info(f"Message.remove_reaction (msg_id={self.id}): Current reactions: {self.reactions}. Removing '{emoji}' for user '{user_id}'.")
+        if emoji not in self.reactions or user_id not in self.reactions[emoji]:
+            logger.warning(f"Message.remove_reaction (msg_id={self.id}): Emoji '{emoji}' or user '{user_id}' not found in reactions {self.reactions}.")
+            return False
+        
+        self.reactions[emoji].remove(user_id)
+        
+        # Clean up empty reactions
+        if not self.reactions[emoji]:
+            del self.reactions[emoji]
+            
+        logger.info(f"Message.remove_reaction (msg_id={self.id}): Successfully removed. Reactions now: {self.reactions}")
+        return True
+
+    def get_reactions(self) -> Dict[str, List[str]]:
+        """Get all reactions for this message.
+        
+        Returns:
+            Dictionary mapping emoji to list of user IDs
+        """
+        return self.reactions
+
+    def get_reaction_counts(self) -> Dict[str, int]:
+        """Get counts of reactions for this message.
+        
+        Returns:
+            Dictionary mapping emoji to count of reactions
+        """
+        return {emoji: len(users) for emoji, users in self.reactions.items()}
+
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -408,7 +472,7 @@ class Message(BaseModel):
                         }
                     ],
                     "metrics": {
-                        "model": "gpt-4o",
+                        "model": "gpt-4.1",
                         "timing": {
                             "started_at": "2024-02-07T00:00:00+00:00",
                             "ended_at": "2024-02-07T00:00:01+00:00",
@@ -423,6 +487,10 @@ class Message(BaseModel):
                             "id": "call-123",
                             "ui_url": "https://weave.ui/call-123"
                         }
+                    },
+                    "reactions": {
+                        ":thumbsup:": ["U123456", "U234567"],
+                        ":heart:": ["U123456"]
                     }
                 }
             ]

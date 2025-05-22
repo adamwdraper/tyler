@@ -14,8 +14,7 @@ import os
 import asyncio
 import weave
 import sys
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread, Message
+from tyler import Agent, Thread, Message
 
 # Initialize weave for tracing if configured
 try:
@@ -28,7 +27,7 @@ except Exception as e:
 # Initialize an agent with selective tools from the notion module
 # This agent can only search Notion but can't create/edit pages
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with searching Notion without being able to modify anything",
     tools=[
         "notion:notion-search,notion-get_page",  # Only include search and get_page tools

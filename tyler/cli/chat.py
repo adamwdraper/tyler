@@ -51,10 +51,7 @@ for logger_name in [
     logging.getLogger(logger_name).setLevel(logging.WARNING)
     logging.getLogger(logger_name).propagate = False
 
-from tyler.models.agent import Agent, StreamUpdate
-from tyler.models.thread import Thread
-from tyler.models.message import Message
-from tyler.database.thread_store import ThreadStore
+from tyler import Agent, StreamUpdate, Thread, Message, ThreadStore
 
 # Initialize rich console
 console = Console()
@@ -408,7 +405,7 @@ notes: |
   - Maintain context across conversations
 
 # Model Configuration
-model_name: "gpt-4o"
+model_name: "gpt-4.1"
 temperature: 0.7
 max_tool_iterations: 10
 

@@ -6,6 +6,9 @@ from tyler.storage.file_store import FileStore
 from litellm import completion
 import uuid
 import weave
+from tyler.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 class Thread(BaseModel):
     """Represents a thread containing multiple messages"""
@@ -15,7 +18,10 @@ class Thread(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     attributes: Dict = Field(default_factory=dict)
-    source: Optional[Dict[str, Any]] = None  # {"name": "slack", "thread_id": "..."}
+    platforms: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description="References to where this thread exists on external platforms. Maps platform name to platform-specific identifiers."
+    )
     
     model_config = {
         "json_schema_extra": {
@@ -27,10 +33,11 @@ class Thread(BaseModel):
                     "created_at": "2024-02-07T00:00:00+00:00",
                     "updated_at": "2024-02-07T00:00:00+00:00",
                     "attributes": {},
-                    "source": {
-                        "name": "slack",
+                    "platforms": {
+                        "slack": {
                         "channel": "C123",
                         "thread_ts": "1234567890.123"
+                        }
                     }
                 }
             ]
@@ -59,7 +66,7 @@ class Thread(BaseModel):
             "created_at": self.created_at.isoformat() if mode == "json" else self.created_at,
             "updated_at": self.updated_at.isoformat() if mode == "json" else self.updated_at,
             "attributes": self.attributes,
-            "source": self.source
+            "platforms": self.platforms
         }
     
     def add_message(self, message: Message) -> None:
@@ -100,7 +107,7 @@ class Thread(BaseModel):
         
     @weave.op()
     def generate_title(self) -> str:
-        """Generate a concise title for the thread using GPT-4o"""
+        """Generate a concise title for the thread using GPT-4.1"""
         if not self.messages:
             return "Empty Thread"
         
@@ -117,7 +124,7 @@ class Thread(BaseModel):
         ]
         
         response = completion(
-            model="gpt-4o",
+            model="gpt-4.1",
             messages=messages,
             temperature=0.7,
             max_tokens=50
@@ -294,3 +301,69 @@ class Thread(BaseModel):
     def get_messages_in_sequence(self) -> List[Message]:
         """Get messages sorted by sequence number"""
         return sorted(self.messages, key=lambda m: m.sequence if m.sequence is not None else float('inf'))
+
+    def get_message_by_id(self, message_id: str) -> Optional[Message]:
+        """Return the message with the specified ID, or None if no message exists with that ID"""
+        for message in self.messages:
+            if message.id == message_id:
+                return message
+        return None
+
+    def add_reaction(self, message_id: str, emoji: str, user_id: str) -> bool:
+        """Add a reaction to a message in the thread
+        
+        Args:
+            message_id: ID of the message to react to
+            emoji: Emoji shortcode (e.g., ":thumbsup:")
+            user_id: ID of the user adding the reaction
+            
+        Returns:
+            True if reaction was added, False if it wasn't (message not found or already reacted)
+        """
+        message = self.get_message_by_id(message_id)
+        if not message:
+            logger.warning(f"Thread.add_reaction (thread_id={self.id}): Message with ID '{message_id}' not found.")
+            return False
+        
+        result = message.add_reaction(emoji, user_id)
+        if result:
+            self.updated_at = datetime.now(UTC) # Ensure thread update time is changed
+            logger.info(f"Thread.add_reaction (thread_id={self.id}): Message '{message_id}' reactions updated. Thread updated_at: {self.updated_at}")
+        return result
+    
+    def remove_reaction(self, message_id: str, emoji: str, user_id: str) -> bool:
+        """Remove a reaction from a message in the thread
+        
+        Args:
+            message_id: ID of the message to remove reaction from
+            emoji: Emoji shortcode (e.g., ":thumbsup:")
+            user_id: ID of the user removing the reaction
+            
+        Returns:
+            True if reaction was removed, False if it wasn't (message or reaction not found)
+        """
+        message = self.get_message_by_id(message_id)
+        if not message:
+            logger.warning(f"Thread.remove_reaction (thread_id={self.id}): Message with ID '{message_id}' not found.")
+            return False
+            
+        result = message.remove_reaction(emoji, user_id)
+        if result:
+            self.updated_at = datetime.now(UTC) # Ensure thread update time is changed
+            logger.info(f"Thread.remove_reaction (thread_id={self.id}): Message '{message_id}' reactions updated. Thread updated_at: {self.updated_at}")
+        return result
+    
+    def get_reactions(self, message_id: str) -> Dict[str, List[str]]:
+        """Get all reactions for a message in the thread
+        
+        Args:
+            message_id: ID of the message to get reactions for
+            
+        Returns:
+            Dictionary mapping emoji to list of user IDs, or empty dict if message not found
+        """
+        message = self.get_message_by_id(message_id)
+        if not message:
+            return {}
+            
+        return message.get_reactions()

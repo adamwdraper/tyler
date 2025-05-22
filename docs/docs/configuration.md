@@ -57,11 +57,11 @@ SLACK_SIGNING_SECRET=your-slack-signing-secret
 The `Agent` class accepts various configuration options to customize its behavior:
 
 ```python
-from tyler.models.agent import Agent
+from tyler import Agent
 
 agent = Agent(
     # Required
-    model_name="gpt-4o",  # LLM model to use
+    model_name="gpt-4.1",  # LLM model to use
     purpose="To help with tasks",  # Agent's purpose
     
     # Optional
@@ -79,7 +79,7 @@ Tyler supports any model available through LiteLLM:
 
 ```python
 # OpenAI
-agent = Agent(model_name="gpt-4o")
+agent = Agent(model_name="gpt-4.1")
 
 # Anthropic
 agent = Agent(model_name="claude-2")
@@ -104,7 +104,7 @@ Tyler supports multiple database backends for storing threads and messages. The 
 
 #### Memory storage (Default)
 ```python
-from tyler.database.thread_store import ThreadStore
+from tyler import ThreadStore
 
 # Use factory pattern for immediate connection validation
 store = await ThreadStore.create()  # Uses memory backend
@@ -126,7 +126,7 @@ Key characteristics:
 
 #### PostgreSQL storage
 ```python
-from tyler.database.thread_store import ThreadStore
+from tyler import ThreadStore
 
 # Use factory pattern for immediate connection validation
 db_url = "postgresql+asyncpg://user:pass@localhost/dbname"
@@ -137,12 +137,17 @@ except Exception as e:
     print(f"Database connection failed: {e}")
     # Handle connection failure appropriately
 
-# Create agent with database storage
+# Register the thread store (and file store if needed)
+from tyler.utils.registry import register_thread_store
+# Assuming 'store' is your created ThreadStore instance as above
+register_thread_store("default_db_store", store)
+
+# Create agent and set it to use the registered store
 agent = Agent(
-    model_name="gpt-4o",
-    purpose="To help with tasks",
-    thread_store=store
+    model_name="gpt-4.1",
+    purpose="To help with tasks"
 )
+agent.set_stores(thread_store_name="default_db_store") # Add file_store_name if using a registered file store
 
 # Must save threads and changes to persist
 thread = Thread()
@@ -164,7 +169,7 @@ Key characteristics:
 
 #### SQLite storage
 ```python
-from tyler.database.thread_store import ThreadStore
+from tyler import ThreadStore
 
 # Use factory pattern for immediate connection validation
 db_url = "sqlite+aiosqlite:///path/to/db.sqlite"
@@ -206,8 +211,7 @@ Configuration options:
 #### Creating and using a FileStore instance
 
 ```python
-from tyler.storage.file_store import FileStore
-from tyler.models.agent import Agent
+from tyler import FileStore, Agent
 
 # Create a FileStore instance with factory pattern
 file_store = await FileStore.create(
@@ -219,16 +223,23 @@ file_store = await FileStore.create(
 # Or use default settings from environment variables
 file_store = await FileStore.create()
 
+# Register stores (thread_store would typically be your database store)
+from tyler.utils.registry import register_thread_store, register_file_store
+# Example: using the 'store' from PostgreSQL example and 'file_store' created above
+# register_thread_store("my_thread_store", store) # 'store' is your DB-backed ThreadStore
+register_file_store("my_file_store", file_store)
+
 # Pass the file_store instance to an Agent
 agent = Agent(
-    model_name="gpt-4o",
-    purpose="To help with tasks",
-    thread_store=thread_store,
-    file_store=file_store  # Explicitly pass file_store instance
+    model_name="gpt-4.1",
+    purpose="To help with tasks"
+    # Agent is initialized without direct store instances
 )
+# Set stores by name from the registry
+agent.set_stores(thread_store_name="my_thread_store", file_store_name="my_file_store")
 
-# When saving a thread with attachments, pass the file_store
-await thread_store.save(thread, file_store=file_store)
+# When saving a thread with attachments, the FileStore is used internally
+await thread_store.save(thread)
 ```
 
 The file storage system provides:
@@ -295,7 +306,7 @@ weather_tool = {
 from tyler.tools.slack import TOOLS as SLACK_TOOLS
 
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="Slack assistant",
     tools=["slack"]  # This will load all Slack tools
 )
@@ -310,7 +321,7 @@ agent = Agent(
 from tyler.tools.notion import TOOLS as NOTION_TOOLS
 
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="Notion assistant",
     tools=["notion"]  # This will load all Notion tools
 )
@@ -322,7 +333,7 @@ agent = Agent(
 ### Using multiple tools
 ```python
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="Multi-purpose assistant",
     tools=[
         "slack",      # Include all Slack tools

@@ -55,9 +55,7 @@ import sys
 import weave
 from typing import List, Dict, Any
 
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message
 from tyler.mcp.utils import initialize_mcp_service, cleanup_mcp_service
 
 async def main():
@@ -102,7 +100,7 @@ async def main():
         # Create an agent with the MCP tools
         agent = Agent(
             name="Tyler",
-            model_name="gpt-4o",
+            model_name="gpt-4.1",
             tools=mcp_tools
         )
         
@@ -176,7 +174,7 @@ try:
     
     # Use the tools with an agent
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         tools=custom_tools
     )
     

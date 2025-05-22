@@ -26,13 +26,11 @@ pip install tyler-agent
 Here's a quick example of using the core components:
 
 ```python
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
+from tyler import Agent, Thread, Message
 
 # Create an agent
 agent = Agent(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     purpose="To help with tasks"
 )
 

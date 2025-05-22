@@ -322,12 +322,64 @@ class NotionClient:
         
         return {"content": "\n\n".join(clean_text)}
 
+def _simplify_notion_item(item: Dict) -> Dict:
+    """Helper function to simplify a Notion page or database object."""
+    simplified_item = {
+        "object": item.get("object"),
+        "id": item.get("id"),
+        "created_time": item.get("created_time"),
+        "last_edited_time": item.get("last_edited_time"),
+        "archived": item.get("archived", False),
+        "in_trash": item.get("in_trash", False),
+        "parent": item.get("parent"),
+        "title": ""
+    }
+
+    item_object_type = item.get("object")
+
+    if item_object_type == "page":
+        simplified_item["url"] = item.get("url")
+        simplified_item["public_url"] = item.get("public_url")
+        
+        # Extract the page title from properties
+        if "properties" in item:
+            properties = item["properties"]
+            if "title" in properties and isinstance(properties["title"], dict) and "title" in properties["title"]:
+                title_property = properties["title"]["title"]
+                if isinstance(title_property, list):
+                    simplified_item["title"] = "".join([t.get("plain_text", "") for t in title_property])
+            elif "Page" in properties and isinstance(properties["Page"], dict) and "title" in properties["Page"]: # Check for "Page" property
+                page_property = properties["Page"]["title"]
+                if isinstance(page_property, list):
+                    simplified_item["title"] = "".join([t.get("plain_text", "") for t in page_property])
+
+    elif item_object_type == "database":
+        simplified_item["url"] = item.get("url") # Databases also have URLs
+        # Database titles are directly in a 'title' array of rich text objects
+        title_array = item.get("title", [])
+        if isinstance(title_array, list):
+            simplified_item["title"] = "".join([t.get("plain_text", "") for t in title_array])
+            
+    return simplified_item
+
 @weave.op(name="notion-search")
 def search(query: Optional[str] = None, filter: Optional[Dict] = None,
           start_cursor: Optional[str] = None, page_size: Optional[int] = None) -> Dict:
     """Search Notion database"""
     client = create_notion_client()
-    return client.search(query=query, filter=filter, start_cursor=start_cursor, page_size=page_size)
+    raw_results = client.search(query=query, filter=filter, start_cursor=start_cursor, page_size=page_size)
+
+    simplified_items = [_simplify_notion_item(item) for item in raw_results.get("results", [])]
+
+    return {
+        "object": raw_results.get("object"),
+        "results": simplified_items,
+        "next_cursor": raw_results.get("next_cursor"),
+        "has_more": raw_results.get("has_more"),
+        "type": raw_results.get("type"),
+        "page_or_database": raw_results.get("page_or_database", {}),
+        "request_id": raw_results.get("request_id")
+    }
 
 @weave.op(name="notion-list_pages")
 def list_pages() -> Dict:
@@ -336,45 +388,19 @@ def list_pages() -> Dict:
     # Use empty search to get all pages with hardcoded page_size=25
     result = search(query="", filter={"value": "page", "property": "object"}, page_size=50)
     
-    # Clean up each result to only include essential properties
-    simplified_results = []
-    for page in result.get("results", []):
-        simplified_page = {
-            "id": page.get("id"),
-            "created_time": page.get("created_time"),
-            "last_edited_time": page.get("last_edited_time"),
-            "archived": page.get("archived"),
-            "in_trash": page.get("in_trash"),
-            "url": page.get("url"),
-            "public_url": page.get("public_url"),
-            "title": ""
-        }
-        
-        # Extract the page title from properties
-        if "properties" in page:
-            # First check for a title property
-            if "title" in page["properties"]:
-                title_property = page["properties"]["title"]
-                if "title" in title_property and title_property["title"]:
-                    simplified_page["title"] = "".join([t.get("plain_text", "") for t in title_property["title"]])
-            # Then check for a Page property that some pages might use instead
-            elif "Page" in page["properties"]:
-                page_property = page["properties"]["Page"]
-                if "title" in page_property and page_property["title"]:
-                    simplified_page["title"] = "".join([t.get("plain_text", "") for t in page_property["title"]])
-        
-        simplified_results.append(simplified_page)
+    # The search function now returns simplified items, so no need to simplify again here.
+    # However, list_pages specifically deals with 'page' objects.
+    # The search might return 'database' objects if filter is not strictly 'page'.
+    # We'll rely on the search function's simplification which is now more generic.
+    # If we strictly want only page fields as before, we might need to adjust _simplify_notion_item
+    # or re-process here. For now, let's assume the generic simplification is fine.
+
+    # If the intention of list_pages is to *only* list pages and *only* have page-specific simplified fields,
+    # we might need a dedicated simplification or filter step.
+    # For now, we assume that the `search` will provide adequately simplified items.
+    # The `filter={"value": "page", "property": "object"}` should ensure only pages are returned by search.
     
-    # Return the same structure but with simplified results
-    return {
-        "object": result.get("object"),
-        "results": simplified_results,
-        "next_cursor": result.get("next_cursor"),
-        "has_more": result.get("has_more"),
-        "type": result.get("type"),
-        "page_or_database": result.get("page_or_database", {}),
-        "request_id": result.get("request_id")
-    }
+    return result # search already returns the desired structure with simplified results
 
 @weave.op(name="notion-get_page")
 def get_page(page_id: str) -> Dict:
@@ -456,7 +482,7 @@ TOOLS = [
             "type": "function",
             "function": {
                 "name": "notion-search",
-                "description": "Searches all titles of pages and databases in Notion that have been shared with the integration. Can search by title or filter to only pages/databases. When constructing queries: • Query around general subject matter. Use keywords that would likely be in the title of a page or database that contains relevant information. • Keep queries concise and leverage pagination to optimize performance. • Refine or expand filters and query terms over time for incremental improvements.",
+                "description": "Searches all titles of pages and databases in Notion that have been shared with the integration. Can search by title or filter to only pages/databases. When constructing queries: • Query around general subject matter. Use keywords that would likely be in the title of a page or database that contains relevant information. • Refine or expand query terms over time for incremental improvements.",
                 "parameters": {
                     "type": "object",
                     "properties": {

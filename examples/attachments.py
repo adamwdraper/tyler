@@ -13,12 +13,7 @@ import os
 import asyncio
 import weave
 import sys
-from tyler.models.agent import Agent
-from tyler.models.thread import Thread
-from tyler.models.message import Message
-from tyler.models.attachment import Attachment
-from tyler.database.thread_store import ThreadStore
-from tyler.storage.file_store import FileStore
+from tyler import Agent, Thread, Message, Attachment, ThreadStore, FileStore
 
 try:
     if os.getenv("WANDB_API_KEY"):
@@ -38,7 +33,7 @@ async def setup():
     
     # Initialize the agent with thread_store, file_store and image tools
     agent = Agent(
-        model_name="gpt-4o",
+        model_name="gpt-4.1",
         purpose="To help with image generation and analysis.",
         temperature=0.7,
         tools=["image"],  # Include image tools for this example
