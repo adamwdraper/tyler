@@ -119,7 +119,7 @@ This ensures the user can access the file correctly.
 </file_handling_instructions>""")
 
     @weave.op()
-    def system_prompt(self, purpose: str, name: str, model_name: str, tools: List[Dict], notes: str = "") -> str:
+    def system_prompt(self, purpose: Union[str, Prompt], name: str, model_name: str, tools: List[Dict], notes: Union[str, Prompt] = "") -> str:
         # Format tools description
         tools_description_lines = []
         for tool in tools:
@@ -131,21 +131,24 @@ This ensures the user can access the file correctly.
         
         tools_description_str = "\n".join(tools_description_lines) if tools_description_lines else "No tools available."
 
+        formatted_purpose = purpose.format() if isinstance(purpose, Prompt) else purpose
+        formatted_notes = notes.format() if isinstance(notes, Prompt) else notes
+
         return self.system_template.format(
             current_date=datetime.now().strftime("%Y-%m-%d %A"),
-            purpose=purpose,
+            purpose=formatted_purpose,
             name=name,
             model_name=model_name,
             tools_description=tools_description_str,
-            notes=notes
+            notes=formatted_notes
         )
 
 class Agent(Model):
     model_name: str = Field(default="gpt-4.1")
     temperature: float = Field(default=0.7)
     name: str = Field(default="Tyler")
-    purpose: str = Field(default="To be a helpful assistant.")
-    notes: str = Field(default="")
+    purpose: Union[str, Prompt] = Field(default_factory=lambda: weave.StringPrompt("To be a helpful assistant."))
+    notes: Union[str, Prompt] = Field(default_factory=lambda: weave.StringPrompt(""))
     version: str = Field(default="1.0.0")
     tools: List[Union[str, Dict]] = Field(default_factory=list, description="List of tools available to the agent. Can include built-in tool module names (as strings) and custom tools (as dicts with required 'definition' and 'implementation' keys, and an optional 'attributes' key for tool metadata). For built-in tools, you can specify specific tools to include using the format 'module:tool1,tool2'.")
     max_tool_iterations: int = Field(default=10)
