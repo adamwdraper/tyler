@@ -78,14 +78,28 @@ def mock_thread_store():
 
 @pytest.fixture
 def mock_file_store():
-    """Create a mock file store for testing and register it in the registry."""
-    file_store = MagicMock()
+    """Create a mock file store for testing."""
+    from tyler.storage.file_store import FileStore
     
-    # Register the store in the registry
-    with patch('tyler.utils.registry.get') as mock_get:
-        mock_get.side_effect = lambda component_type, name: file_store if component_type == "file_store" else None
+    # Create a proper FileStore mock
+    class MockFileStore(FileStore):
+        def __init__(self):
+            # Don't call super().__init__() to avoid creating real directories
+            self.base_path = "/tmp/test"
+            self.max_file_size = 50 * 1024 * 1024
+            self.allowed_mime_types = {"text/plain"}
+            self.max_storage_size = 5 * 1024 * 1024 * 1024
+            
+        async def save(self, content, filename, mime_type=None):
+            return {"id": "test-file-id", "filename": filename}
+            
+        async def get(self, file_id, storage_path=None):
+            return b"test content"
+            
+        async def delete(self, file_id, storage_path=None):
+            pass
     
-    return file_store
+    return MockFileStore()
 
 @pytest.fixture
 def mock_wandb():
@@ -113,33 +127,18 @@ def thread():
 
 @pytest.fixture
 def agent(mock_tool_runner, mock_thread_store, mock_file_store, mock_openai, mock_wandb, mock_litellm, mock_prompt, mock_file_processor, mock_env_vars):
-    """Create a test agent that uses the registry for stores"""
-    with patch('tyler.utils.registry.get') as mock_get:
-        mock_get.side_effect = lambda component_type, name: mock_thread_store if component_type == "thread_store" else mock_file_store if component_type == "file_store" else None
-        
-        agent = Agent(
-            name="Tyler",
-            model_name="gpt-4",
-            temperature=0.5,
-            purpose="test purpose",
-            notes="test notes"
-        )
-        
-        # Create proper async method mocks that return our test stores
-        async def mock_get_thread_store():
-            return mock_thread_store
-        
-        async def mock_get_file_store():
-            return mock_file_store
-            
-        # Replace the async methods with our properly mocked async versions
-        agent._get_thread_store = mock_get_thread_store
-        agent._get_file_store = mock_get_file_store
-        
-        # Set up the agent to use the registry
-        agent.set_stores(thread_store_name="default", file_store_name="default")
-        
-        return agent
+    """Create a test agent that uses mock stores"""
+    agent = Agent(
+        name="Tyler",
+        model_name="gpt-4",
+        temperature=0.5,
+        purpose="test purpose",
+        notes="test notes",
+        thread_store=mock_thread_store,
+        file_store=mock_file_store
+    )
+    
+    return agent
 
 def test_init(agent):
     """Test Agent initialization"""
@@ -326,7 +325,7 @@ async def test_go_with_tool_calls(agent, mock_thread_store, mock_prompt, mock_li
     assert messages[2].content == "Here's what I found"
 
 @pytest.mark.asyncio
-async def test_init_with_tools(mock_thread_store, mock_prompt, mock_litellm, mock_file_processor, mock_openai):
+async def test_init_with_tools(mock_thread_store, mock_file_store, mock_prompt, mock_litellm, mock_file_processor, mock_openai):
     """Test Agent initialization with both string and dict tools"""
     with patch('tyler.models.agent.tool_runner') as mock_tool_runner:
         # Mock the tool module loading
@@ -348,7 +347,8 @@ async def test_init_with_tools(mock_thread_store, mock_prompt, mock_litellm, moc
         
         agent = Agent(
             tools=['web', custom_tool],  # Mix of string module and custom tool
-            thread_store=mock_thread_store
+            thread_store=mock_thread_store,
+            file_store=mock_file_store
         )
         
         # Verify tool loading
@@ -507,12 +507,8 @@ async def test_get_thread_direct(agent):
 @pytest.mark.asyncio
 async def test_get_thread_missing_store(agent):
     """Test getting thread by ID without thread store"""
-    # Create async method that returns None
-    async def mock_get_none():
-        return None
-        
-    # Replace with our mock
-    agent._get_thread_store = mock_get_none
+    # Set thread store to None
+    agent.thread_store = None
     
     with pytest.raises(ValueError, match="Thread store is required when passing thread ID"):
         await agent._get_thread("test-thread-id")
@@ -667,18 +663,19 @@ async def test_go_with_weave_metrics(agent, mock_thread_store, mock_prompt):
 @pytest.mark.asyncio
 async def test_get_thread_no_store():
     """Test get_thread with no thread store"""
-    agent = Agent()  # Create without thread store
+    agent = Agent()  # Create without thread store - will create defaults
     thread = Thread(id="test-thread")
     
     # Should work with direct thread object
     result = await agent._get_thread(thread)
     assert result == thread
     
-    # Should fail with thread ID when store is None
-    with patch.object(agent, '_get_thread_store', return_value=None):
-        with pytest.raises(ValueError) as exc_info:
-            await agent._get_thread("test-thread-id")
-        assert str(exc_info.value) == "Thread store is required when passing thread ID"
+    # Set thread store to None to test the error case
+    agent.thread_store = None
+    
+    with pytest.raises(ValueError) as exc_info:
+        await agent._get_thread("test-thread-id")
+    assert str(exc_info.value) == "Thread store is required when passing thread ID"
 
 @pytest.mark.asyncio
 async def test_go_with_multiple_tool_call_iterations(agent, mock_thread_store, mock_prompt, mock_litellm):
@@ -1063,21 +1060,13 @@ async def test_process_tool_call_with_image_attachment():
         assert attachment.mime_type == "image/png"
 
 @pytest.mark.asyncio
-async def test_go_with_tool_returning_image():
+async def test_go_with_tool_returning_image(mock_thread_store, mock_file_store):
     """Test the go() method when a tool returns an image attachment."""
-    # Create thread store with async methods
-    mock_thread_store = MagicMock()
-    mock_thread_store.save = AsyncMock(return_value=None)
-    mock_thread_store.get = AsyncMock(return_value=Thread(id="test-thread"))
+    # Set up mock thread store to return a test thread
+    mock_thread_store.get.return_value = Thread(id="test-thread")
     
-    # Create agent with mock thread store through registry
-    agent = Agent()
-    
-    # Create proper async method mock
-    async def mock_get_thread_store():
-        return mock_thread_store
-        
-    agent._get_thread_store = mock_get_thread_store
+    # Create agent with mock stores
+    agent = Agent(thread_store=mock_thread_store, file_store=mock_file_store)
     
     # Create base64 encoded content
     test_image_bytes = b"test image content"
@@ -1268,22 +1257,15 @@ async def test_go_with_invalid_response(agent, mock_thread_store):
 @pytest.mark.asyncio
 async def test_get_thread_with_missing_thread(agent):
     """Test _get_thread with missing thread ID"""
-    # Mock thread_store to return None
-    mock_thread_store = MagicMock()
-    mock_thread_store.get = AsyncMock(return_value=None)
-    
-    # Create proper async method mock
-    async def mock_get_thread_store():
-        return mock_thread_store
-        
-    agent._get_thread_store = mock_get_thread_store
+    # Set up the existing thread store to return None for the missing thread
+    agent.thread_store.get.return_value = None
     
     # Call _get_thread with non-existent ID
     with pytest.raises(ValueError, match="Thread with ID missing-id not found"):
         await agent._get_thread("missing-id")
         
     # Verify thread_store.get was called
-    mock_thread_store.get.assert_called_once_with("missing-id")
+    agent.thread_store.get.assert_called_once_with("missing-id")
 
 @pytest.mark.asyncio
 async def test_serialize_tool_calls_with_invalid_calls():
@@ -1356,4 +1338,308 @@ async def test_get_completion_with_weave_call():
 
 class AsyncMock(MagicMock):
     async def __call__(self, *args, **kwargs):
-        return super(AsyncMock, self).__call__(*args, **kwargs) 
+        return super(AsyncMock, self).__call__(*args, **kwargs)
+
+@pytest.mark.asyncio
+async def test_init_with_api_base_and_extra_headers():
+    """Test Agent initialization with api_base and extra_headers"""
+    api_base = "https://api.inference.wandb.ai/v1"
+    extra_headers = {"OpenAI-Project": "team/project"}
+    
+    agent = Agent(
+        name="Tyler",
+        model_name="deepseek-ai/DeepSeek-R1-0528",
+        api_base=api_base,
+        extra_headers=extra_headers
+    )
+    
+    assert agent.api_base == api_base
+    assert agent.extra_headers == extra_headers
+    assert agent.model_name == "deepseek-ai/DeepSeek-R1-0528"
+
+@pytest.mark.asyncio
+async def test_init_without_api_base_and_extra_headers():
+    """Test Agent initialization without api_base and extra_headers (defaults)"""
+    agent = Agent(name="Tyler", model_name="gpt-4")
+    
+    assert agent.api_base is None
+    assert agent.extra_headers is None
+
+@pytest.mark.asyncio
+async def test_step_with_api_base_and_extra_headers(mock_thread_store):
+    """Test step method includes api_base and extra_headers in completion params"""
+    api_base = "https://api.inference.wandb.ai/v1"
+    extra_headers = {"OpenAI-Project": "team/project", "Custom-Header": "value"}
+    
+    agent = Agent(
+        name="Tyler",
+        model_name="deepseek-ai/DeepSeek-R1-0528",
+        api_base=api_base,
+        extra_headers=extra_headers
+    )
+    
+    # No need to mock file store - it's created automatically in init
+    
+    thread = Thread(id="test-thread")
+    thread.add_message(Message(role="user", content="test message"))
+    
+    # Mock acompletion to capture the parameters passed to it
+    with patch('tyler.models.agent.acompletion') as mock_acompletion:
+        mock_response = MagicMock()
+        mock_response.id = "test-id"
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].finish_reason = "stop"
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.choices[0].message.role = "assistant"
+        mock_response.choices[0].message.tool_calls = None
+        mock_response.model = "deepseek-ai/DeepSeek-R1-0528"
+        mock_response.usage.completion_tokens = 10
+        mock_response.usage.prompt_tokens = 20
+        mock_response.usage.total_tokens = 30
+        mock_acompletion.return_value = mock_response
+        
+        # Call step
+        response, metrics = await agent.step(thread)
+        
+        # Verify acompletion was called with our custom parameters
+        mock_acompletion.assert_called_once()
+        call_args = mock_acompletion.call_args
+        completion_params = call_args[1] if call_args[1] else call_args[0][0] if call_args[0] else {}
+        
+        # Check that api_base and extra_headers were included
+        assert completion_params.get("api_base") == api_base
+        assert completion_params.get("extra_headers") == extra_headers
+        assert completion_params.get("model") == "deepseek-ai/DeepSeek-R1-0528"
+
+@pytest.mark.asyncio
+async def test_step_without_custom_params(mock_thread_store):
+    """Test step method without api_base and extra_headers (should not include them)"""
+    agent = Agent(name="Tyler", model_name="gpt-4")
+    
+    # No need to mock file store - it's created automatically in init
+    
+    thread = Thread(id="test-thread")
+    thread.add_message(Message(role="user", content="test message"))
+    
+    # Mock acompletion to capture the parameters passed to it
+    with patch('tyler.models.agent.acompletion') as mock_acompletion:
+        mock_response = MagicMock()
+        mock_response.id = "test-id"
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].finish_reason = "stop"
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.choices[0].message.role = "assistant"
+        mock_response.choices[0].message.tool_calls = None
+        mock_response.model = "gpt-4"
+        mock_response.usage.completion_tokens = 10
+        mock_response.usage.prompt_tokens = 20
+        mock_response.usage.total_tokens = 30
+        mock_acompletion.return_value = mock_response
+        
+        # Call step
+        response, metrics = await agent.step(thread)
+        
+        # Verify acompletion was called without custom parameters
+        mock_acompletion.assert_called_once()
+        call_args = mock_acompletion.call_args
+        completion_params = call_args[1] if call_args[1] else call_args[0][0] if call_args[0] else {}
+        
+        # Check that api_base and extra_headers were NOT included
+        assert "api_base" not in completion_params
+        assert "extra_headers" not in completion_params
+        assert completion_params.get("model") == "gpt-4"
+
+@pytest.mark.asyncio
+async def test_go_with_custom_api_params(mock_thread_store):
+    """Test go method with custom API parameters"""
+    api_base = "https://api.inference.wandb.ai/v1"
+    extra_headers = {"OpenAI-Project": "team/project"}
+    
+    agent = Agent(
+        name="Tyler",
+        model_name="deepseek-ai/DeepSeek-R1-0528",
+        api_base=api_base,
+        extra_headers=extra_headers
+    )
+    
+    # No need to mock file store - it's created automatically in init
+    
+    thread = Thread(id="test-conv", title="Test Thread")
+    thread.messages = []
+    mock_thread_store.get.return_value = thread
+    
+    # Mock acompletion
+    with patch('tyler.models.agent.acompletion') as mock_acompletion:
+        mock_response = MagicMock()
+        mock_response.id = "test-id"
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].finish_reason = "stop"
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.choices[0].message.role = "assistant"
+        mock_response.choices[0].message.tool_calls = None
+        mock_response.model = "deepseek-ai/DeepSeek-R1-0528"
+        mock_response.usage.completion_tokens = 10
+        mock_response.usage.prompt_tokens = 20
+        mock_response.usage.total_tokens = 30
+        mock_acompletion.return_value = mock_response
+        
+        # Mock weave call
+        mock_weave_call = MagicMock()
+        mock_weave_call.id = "test-weave-id"
+        mock_weave_call.ui_url = "https://weave.ui/test"
+        
+        # Override _get_completion to prevent real API calls but capture params
+        class DummyCompletion:
+            async def call(self, s, **kwargs):
+                # Verify that the kwargs contain our custom parameters
+                assert kwargs.get("api_base") == api_base
+                assert kwargs.get("extra_headers") == extra_headers
+                return (mock_response, mock_weave_call)
+        
+        agent._get_completion = DummyCompletion()
+        
+        # No need to patch _get_thread_store since we already set it in the fixture
+        with patch.object(agent, '_get_thread', return_value=thread):
+            result_thread, new_messages = await agent.go("test-conv")
+            
+            # Verify basic functionality still works
+            assert len(new_messages) == 1
+            assert new_messages[0].role == "assistant"
+            assert new_messages[0].content == "Test response"
+
+@pytest.mark.asyncio
+async def test_step_with_streaming_and_custom_params(mock_thread_store):
+    """Test step method with streaming enabled and custom API parameters"""
+    api_base = "https://api.inference.wandb.ai/v1"
+    extra_headers = {"OpenAI-Project": "team/project"}
+    
+    agent = Agent(
+        name="Tyler",
+        model_name="deepseek-ai/DeepSeek-R1-0528",
+        api_base=api_base,
+        extra_headers=extra_headers
+    )
+    
+    # No need to mock file store - it's created automatically in init
+    
+    thread = Thread(id="test-thread")
+    thread.add_message(Message(role="user", content="test message"))
+    
+    # Mock acompletion for streaming
+    with patch('tyler.models.agent.acompletion') as mock_acompletion:
+        # Create a mock async generator for streaming response
+        async def mock_stream():
+            yield MagicMock()
+        
+        mock_acompletion.return_value = mock_stream()
+        
+        # Call step with streaming
+        response, metrics = await agent.step(thread, stream=True)
+        
+        # Verify acompletion was called with streaming and custom parameters
+        mock_acompletion.assert_called_once()
+        call_args = mock_acompletion.call_args
+        completion_params = call_args[1] if call_args[1] else call_args[0][0] if call_args[0] else {}
+        
+        assert completion_params.get("api_base") == api_base
+        assert completion_params.get("extra_headers") == extra_headers
+        assert completion_params.get("stream") is True
+
+@pytest.mark.asyncio
+async def test_init_with_empty_extra_headers():
+    """Test Agent initialization with empty extra_headers dict"""
+    agent = Agent(
+        name="Tyler",
+        model_name="gpt-4",
+        extra_headers={}
+    )
+    
+    assert agent.extra_headers == {}
+
+@pytest.mark.asyncio
+async def test_step_with_empty_api_base():
+    """Test step method with empty string api_base (should not be included)"""
+    agent = Agent(
+        name="Tyler",
+        model_name="gpt-4",
+        api_base=""  # Empty string
+    )
+    
+    # No need to mock file store - it's created automatically in init
+    
+    thread = Thread(id="test-thread")
+    thread.add_message(Message(role="user", content="test message"))
+    
+    # Mock acompletion
+    with patch('tyler.models.agent.acompletion') as mock_acompletion:
+        mock_response = MagicMock()
+        mock_response.id = "test-id"
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].finish_reason = "stop"
+        mock_response.choices[0].message.content = "Test response"
+        mock_response.choices[0].message.role = "assistant"
+        mock_response.choices[0].message.tool_calls = None
+        mock_response.model = "gpt-4"
+        mock_response.usage.completion_tokens = 10
+        mock_response.usage.prompt_tokens = 20
+        mock_response.usage.total_tokens = 30
+        mock_acompletion.return_value = mock_response
+        
+        # Call step
+        response, metrics = await agent.step(thread)
+        
+        # Verify acompletion was called without api_base (empty string is falsy)
+        mock_acompletion.assert_called_once()
+        call_args = mock_acompletion.call_args
+        completion_params = call_args[1] if call_args[1] else call_args[0][0] if call_args[0] else {}
+        
+        # Empty string should not be included (it's falsy)
+        assert "api_base" not in completion_params
+
+@pytest.mark.asyncio
+async def test_weave_inference_service_example():
+    """Test a realistic example using weave inference service"""
+    # This test simulates the actual usage pattern for weave inference
+    agent = Agent(
+        name="Tyler",
+        model_name="deepseek-ai/DeepSeek-R1-0528",
+        api_base="https://api.inference.wandb.ai/v1",
+        extra_headers={"OpenAI-Project": "my-team/my-project"}
+    )
+    
+    # No need to mock file store - it's created automatically in init
+    
+    thread = Thread(id="test-thread")
+    thread.add_message(Message(role="user", content="Tell me a joke"))
+    
+    # Mock a successful response
+    with patch('tyler.models.agent.acompletion') as mock_acompletion:
+        mock_response = MagicMock()
+        mock_response.id = "deepseek-response-id"
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].finish_reason = "stop"
+        mock_response.choices[0].message.content = "Why don't scientists trust atoms? Because they make up everything!"
+        mock_response.choices[0].message.role = "assistant"
+        mock_response.choices[0].message.tool_calls = None
+        mock_response.model = "deepseek-ai/DeepSeek-R1-0528"
+        mock_response.usage.completion_tokens = 15
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.total_tokens = 25
+        mock_acompletion.return_value = mock_response
+        
+        # Call step
+        response, metrics = await agent.step(thread)
+        
+        # Verify the completion was called with correct weave inference parameters
+        mock_acompletion.assert_called_once()
+        call_args = mock_acompletion.call_args
+        completion_params = call_args[1] if call_args[1] else call_args[0][0] if call_args[0] else {}
+        
+        assert completion_params["model"] == "deepseek-ai/DeepSeek-R1-0528"
+        assert completion_params["api_base"] == "https://api.inference.wandb.ai/v1"
+        assert completion_params["extra_headers"] == {"OpenAI-Project": "my-team/my-project"}
+        assert completion_params["temperature"] == 0.7  # Default temperature
+        
+        # Verify response
+        assert response.choices[0].message.content == "Why don't scientists trust atoms? Because they make up everything!"
+        assert metrics["model"] == "deepseek-ai/DeepSeek-R1-0528" 
