@@ -15,7 +15,7 @@ The registry helps in scenarios where you might have multiple store configuratio
 Key benefits:
 -   **Named Instances**: Register stores with a unique name (e.g., "default", "persistent_db", "archive_files").
 -   **Global Access**: Retrieve registered stores from anywhere in your application using their name.
--   **Agent Integration**: Agents can be configured to use stores from the registry by specifying their registered names via `agent.set_stores()`.
+-   **Agent Integration**: Agents can be configured to use stores from the registry by passing store instances directly to the Agent constructor, or by using the registry's `get_thread_store()` and `get_file_store()` functions to retrieve stores by name.
 
 ## Core Functions
 
@@ -178,12 +178,31 @@ agent = Agent(
     model_name="gpt-4.1"
 )
 
-# Configure agent to use the registered stores
-agent.set_stores(thread_store_name="main_db", file_store_name="main_files")
+# Option 1: Configure agent with store instances directly
+agent = Agent(
+    name="ConfiguredAgent",
+    purpose="To demonstrate using registered stores.",
+    model_name="gpt-4.1",
+    thread_store=db_store,  # Pass store instance directly
+    file_store=fs_store     # Pass store instance directly
+)
+
+# Option 2: Retrieve stores from registry and pass to agent
+from tyler.utils.registry import get_thread_store, get_file_store
+retrieved_db_store = get_thread_store("main_db")
+retrieved_fs_store = get_file_store("main_files")
+
+agent = Agent(
+    name="ConfiguredAgent",
+    purpose="To demonstrate using registered stores.",
+    model_name="gpt-4.1",
+    thread_store=retrieved_db_store,
+    file_store=retrieved_fs_store
+)
 
 # Now, when agent performs operations requiring storage,
-# it will use "main_db" ThreadStore and "main_files" FileStore.
-# For example, agent.go(thread) will save the thread to "main_db".
+# it will use the configured ThreadStore and FileStore.
+# For example, agent.go(thread) will save the thread using the configured stores.
 ```
 
 ## Generic Registry Functions (Advanced)
@@ -220,6 +239,6 @@ print("Thread stores:", thread_stores_only)
 ## See Also
 - [Core Concepts: Storage](../core-concepts.md#storage)
 - [Configuration Guide](../configuration.md#storage-configuration)
-- [Agent API](./agent.md) (for `set_stores` method)
+- [Agent API](./agent.md)
 - [ThreadStore API](./thread-store.md)
 - [FileStore API](./file-store.md) 

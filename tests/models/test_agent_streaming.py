@@ -642,7 +642,8 @@ async def test_go_stream_thread_store_save():
     mock_thread_store.save = mock_save
     mock_thread_store.get = mock_get
     
-    agent = Agent(stream=True)
+    # Create agent with the mock thread store directly
+    agent = Agent(stream=True, thread_store=mock_thread_store)
     thread = Thread(id="test-thread")
     # Initial 'save' to put the empty thread in our mock store
     await mock_thread_store.save(thread)
@@ -660,12 +661,6 @@ async def test_go_stream_thread_store_save():
     ]
     
     mock_weave_call = MagicMock()
-    
-    # --- Key Change: Patch _get_thread_store --- 
-    async def get_mock_store():
-        return mock_thread_store
-    agent._get_thread_store = get_mock_store
-    # --- End Key Change ---\
     
     with patch.object(agent, '_get_completion') as mock_get_completion, \
          patch('tyler.models.agent.tool_runner') as mock_tool_runner:

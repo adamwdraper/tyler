@@ -645,9 +645,13 @@ file_store = await FileStore.create() # or with path
 register_thread_store("default", thread_store)
 register_file_store("default", file_store)
 
-# Initialize agent and set stores
-agent = Agent(model_name="gpt-4.1", purpose="To help with tasks")
-agent.set_stores(thread_store_name="default", file_store_name="default")
+# Initialize agent with stores
+agent = Agent(
+    model_name="gpt-4.1", 
+    purpose="To help with tasks",
+    thread_store=thread_store,
+    file_store=file_store
+)
 ```
 
 #### Memory Backend
@@ -736,13 +740,13 @@ file_store = await FileStore.create()
 # register_thread_store("default", thread_store)
 # register_file_store("default", file_store)
 
-# Initialize agent and set stores
+# Initialize agent with stores
 agent = Agent(
     model_name="gpt-4.1",
-    purpose="To help with tasks"
-    # No direct store parameters here
+    purpose="To help with tasks",
+    thread_store=thread_store,
+    file_store=file_store
 )
-agent.set_stores(thread_store_name="default", file_store_name="default")
 
 # When handling attachments
 message = Message(role="user", content="Here's a file")
