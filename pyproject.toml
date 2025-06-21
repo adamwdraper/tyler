@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tyler-agent"
-version = "1.0.0"
+version = "1.1.0"
 description = "Tyler: A development kit for manifesting AI agents with a complete lack of conventional limitations"
 readme = "README.md"
 requires-python = ">=3.12"
