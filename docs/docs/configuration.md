@@ -142,12 +142,12 @@ from tyler.utils.registry import register_thread_store
 # Assuming 'store' is your created ThreadStore instance as above
 register_thread_store("default_db_store", store)
 
-# Create agent and set it to use the registered store
+# Create agent with the store directly
 agent = Agent(
     model_name="gpt-4.1",
-    purpose="To help with tasks"
+    purpose="To help with tasks",
+    thread_store=store  # Pass the store instance directly
 )
-agent.set_stores(thread_store_name="default_db_store") # Add file_store_name if using a registered file store
 
 # Must save threads and changes to persist
 thread = Thread()
@@ -229,14 +229,13 @@ from tyler.utils.registry import register_thread_store, register_file_store
 # register_thread_store("my_thread_store", store) # 'store' is your DB-backed ThreadStore
 register_file_store("my_file_store", file_store)
 
-# Pass the file_store instance to an Agent
+# Pass the store instances directly to an Agent
 agent = Agent(
     model_name="gpt-4.1",
-    purpose="To help with tasks"
-    # Agent is initialized without direct store instances
+    purpose="To help with tasks",
+    thread_store=thread_store,  # Pass thread store instance directly
+    file_store=file_store       # Pass file store instance directly
 )
-# Set stores by name from the registry
-agent.set_stores(thread_store_name="my_thread_store", file_store_name="my_file_store")
 
 # When saving a thread with attachments, the FileStore is used internally
 await thread_store.save(thread)
