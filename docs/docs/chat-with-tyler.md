@@ -68,7 +68,7 @@ The CLI is included with the Tyler package and provides a simple way to interact
 The CLI is installed automatically when you install Tyler:
 
 ```bash
-pip install tyler-agent
+uv add tyler-agent
 ```
 
 ### Basic usage

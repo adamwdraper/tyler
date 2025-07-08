@@ -21,7 +21,7 @@ Tyler makes it easy to start building effective AI agents in just a few lines of
 - **Advanced debugging**: Integration with [W&B Weave](https://weave-docs.wandb.ai/) for powerful tracing and debugging capabilities
 - **Flexible model support**: Use any LLM provider supported by LiteLLM (100+ providers including OpenAI, Anthropic, etc.)
 
-Get started quickly by installing Tyler via pip: `pip install tyler-agent` and check out our [quickstart guide](./quickstart.md) to build your first agent in minutes.
+Get started quickly by installing Tyler via uv: `uv add tyler-agent` and check out our [quickstart guide](./quickstart.md) to build your first agent in minutes.
 
 ## Overview
 

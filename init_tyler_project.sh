@@ -22,9 +22,9 @@ eval "$(pyenv init -)"
 eval "$(pyenv virtualenv-init -)"
 pyenv activate tyler-examples
 
-# Install Tyler in development mode
+# Install Tyler in development mode using uv
 echo "Installing Tyler in development mode..."
-pip install -e "$TYLER_SOURCE_DIR"
+uv add --dev --editable "$TYLER_SOURCE_DIR"
 
 # Copy example files directly to root
 echo "Copying example files..."
@@ -43,6 +43,6 @@ echo "Project initialization complete!"
 echo "Next steps:"
 echo "1. Edit .env file with your API keys"
 echo "2. Run examples with:"
-echo "   python basic.py"
-echo "   python memory_storage.py"
-echo "   python database_storage.py" 
+echo "   uv run python basic.py"
+echo "   uv run python memory_storage.py"
+echo "   uv run python database_storage.py" 

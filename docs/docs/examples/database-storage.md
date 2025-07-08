@@ -136,7 +136,7 @@ Tyler includes a built-in Docker Compose configuration to easily set up a Postgr
 
 ### Prerequisites
 - Docker and Docker Compose installed on your system
-- Tyler installed via pip (`pip install tyler-agent`)
+- Tyler installed via uv (`uv add tyler-agent`)
 
 ### Setup Steps
 

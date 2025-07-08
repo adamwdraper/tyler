@@ -46,7 +46,7 @@ cd tyler
 
 2. Install dependencies:
 ```bash
-pip install tyler-agent[dev]
+uv add tyler-agent --dev
 ```
 
 3. Set up environment variables:

@@ -134,7 +134,7 @@ if __name__ == "__main__":
 
 1. Install Tyler and dependencies:
 ```bash
-pip install tyler-agent
+uv add tyler-agent
 ```
 
 2. Set up your environment variables in `.env`:

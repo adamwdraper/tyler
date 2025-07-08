@@ -127,24 +127,27 @@ Multiple storage backends for:
 ### Prerequisites
 
 - Python 3.12.8
-- pip (Python package manager)
+- uv (modern Python package manager)
 
 ### Installation
 
 ```bash
+# Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # Install required libraries for PDF and image processing
 brew install libmagic poppler
 
 # Install Tyler (includes all core dependencies)
-pip install tyler-agent
+uv add tyler-agent
 ```
 
 # For development installation:
 ```bash
-pip install tyler-agent[dev]
+uv add tyler-agent --dev
 ```
 
-When you install Tyler using pip, all required runtime dependencies will be installed automatically, including:
+When you install Tyler using uv, all required runtime dependencies will be installed automatically, including:
 - LLM support (LiteLLM, OpenAI)
 - Database support (PostgreSQL, SQLite)
 - Monitoring and metrics (Weave, Wandb)

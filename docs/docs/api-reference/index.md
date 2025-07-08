@@ -18,7 +18,7 @@ This section provides detailed documentation for Tyler's core components and API
 To use these components, install Tyler:
 
 ```bash
-pip install tyler-agent
+uv add tyler-agent
 ```
 
 ## Basic Usage

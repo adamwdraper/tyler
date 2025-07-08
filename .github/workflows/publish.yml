@@ -21,6 +21,11 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -28,8 +33,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install hatch
+          uv tool install hatch
       
       - name: Extract version from PR branch
         run: |
@@ -45,10 +49,10 @@ jobs:
           git push origin "v$VERSION"
       
       - name: Build package
-        run: hatch build
+        run: uv tool run hatch build
       
       - name: Publish to PyPI
         env:
           HATCH_INDEX_USER: __token__
           HATCH_INDEX_AUTH: ${{ secrets.PYPI_API_TOKEN }}
-        run: hatch publish 
+        run: uv tool run hatch publish 

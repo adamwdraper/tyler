@@ -30,7 +30,7 @@ brew install libmagic poppler
 Install the latest version from PyPI:
 
 ```bash
-pip install tyler-agent
+uv add tyler-agent
 ```
 
 ### Development Installation
