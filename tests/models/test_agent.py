@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import patch, MagicMock, create_autospec, Mock, AsyncMock
 from tyler import Agent, Thread, Message, ThreadStore
 from tyler.utils.tool_runner import tool_runner, ToolRunner
-from tyler.database.storage_backend import MemoryBackend
+from narrator.database.storage_backend import MemoryBackend
 from openai import OpenAI
 from litellm import ModelResponse
 import base64
@@ -70,16 +70,12 @@ def mock_thread_store():
     store.find_by_attributes.return_value = []
     store.find_by_source.return_value = []
     
-    # Patch the registry.get function
-    with patch('tyler.utils.registry.get') as mock_get:
-        mock_get.return_value = store
-    
     return store
 
 @pytest.fixture
 def mock_file_store():
     """Create a mock file store for testing."""
-    from tyler.storage.file_store import FileStore
+    from narrator import FileStore
     
     # Create a proper FileStore mock
     class MockFileStore(FileStore):

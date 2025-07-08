@@ -1,14 +1,10 @@
 """Main CLI for Tyler"""
 import click
-from tyler.database.cli import cli as db_cli
 
 @click.group()
 def cli():
     """Tyler CLI - Main command-line interface for Tyler."""
     pass
-
-# Add database commands as a subcommand group
-cli.add_command(db_cli, name="db")
 
 # Import other CLI modules and add their commands
 try:

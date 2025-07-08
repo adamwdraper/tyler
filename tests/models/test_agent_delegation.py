@@ -2,7 +2,7 @@
 Tests for the agent delegation functionality.
 
 This file tests the delegation of tasks from one agent to another,
-focusing on the integration between Agent and AgentRunner classes.
+focusing on the new direct delegation approach without registries.
 """
 import os
 os.environ["OPENAI_API_KEY"] = "dummy"
@@ -10,17 +10,9 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock, call
 import json
 from tyler import Agent, Thread, Message, ThreadStore
-from tyler.utils.agent_runner import agent_runner
 from tyler.utils.tool_runner import tool_runner
 import types
 import asyncio
-
-# Reset agent_runner between tests
-@pytest.fixture(autouse=True)
-def reset_agent_runner():
-    """Reset the agent_runner for each test"""
-    agent_runner.agents = {}
-    yield
 
 # Reset tool_runner between tests
 @pytest.fixture(autouse=True)
@@ -59,38 +51,7 @@ def thread():
     return thread
 
 @pytest.mark.asyncio
-async def test_agent_registers_with_agent_runner():
-    """Test that an agent registers with the agent_runner upon initialization"""
-    # Create an agent
-    agent = Agent(
-        name="TestAgent",
-        model_name="gpt-4.1",
-        purpose="Test purpose"
-    )
-    
-    # Check it's not registered with agent_runner (since it has no child agents)
-    assert "TestAgent" not in agent_runner.list_agents()
-    
-    # Create an agent with a child
-    child_agent = Agent(
-        name="ChildAgent",
-        model_name="gpt-4.1",
-        purpose="Child agent purpose"
-    )
-    
-    parent_agent = Agent(
-        name="ParentAgent",
-        model_name="gpt-4.1",
-        purpose="Parent agent purpose",
-        agents=[child_agent]
-    )
-    
-    # Verify child agent was registered with agent_runner
-    assert "ChildAgent" in agent_runner.list_agents()
-    assert agent_runner.get_agent("ChildAgent") == child_agent
-
-@pytest.mark.asyncio
-async def test_delegation_tools_created():
+async def test_agent_delegation_tools_created():
     """Test that delegation tools are created for child agents"""
     # Create an agent with a child
     child_agent = Agent(
@@ -116,7 +77,7 @@ async def test_delegation_tools_created():
 
 @pytest.mark.asyncio
 async def test_multiple_child_agents():
-    """Test registering multiple child agents with an agent"""
+    """Test creating delegation tools for multiple child agents"""
     # Create multiple child agents
     research_agent = Agent(
         name="Research",
@@ -144,16 +105,16 @@ async def test_multiple_child_agents():
         agents=[research_agent, code_agent, creative_agent]
     )
     
-    # Verify all child agents were registered
-    registered_agents = agent_runner.list_agents()
-    assert "Research" in registered_agents
-    assert "Code" in registered_agents
-    assert "Creative" in registered_agents
-    
     # Verify delegation tools were created for all children
     assert "delegate_to_Research" in tool_runner.tools
     assert "delegate_to_Code" in tool_runner.tools
     assert "delegate_to_Creative" in tool_runner.tools
+    
+    # Verify parent agent has delegation tools in processed tools
+    tool_names = [t.get('function', {}).get('name') for t in parent_agent._processed_tools if 'function' in t]
+    assert "delegate_to_Research" in tool_names
+    assert "delegate_to_Code" in tool_names
+    assert "delegate_to_Creative" in tool_names
 
 @pytest.mark.asyncio
 async def test_agent_delegation_tool_call(mock_litellm, mock_thread_store):

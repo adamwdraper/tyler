@@ -1,3 +1,0 @@
-"""
-Test database package initialization.
-""" 

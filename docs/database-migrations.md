@@ -1,74 +1,72 @@
 # Database Migrations in Tyler
 
-This document describes how to manage database migrations in Tyler.
+This document describes how to manage database migrations when using Tyler with the Narrator storage library.
 
 ## Running Migrations
 
-When Tyler is updated, you may need to run database migrations to update your database schema. There are several ways to do this depending on how you installed Tyler.
+When the Narrator is updated, you may need to run database migrations to update your database schema. The Narrator provides a dedicated CLI for database management.
 
-### Using the Tyler CLI (Recommended)
+### Using the Narrator CLI (Recommended)
 
-If you installed Tyler through pip, pypi, or uv, you can use the built-in CLI command:
+If you installed the-narrator through pip, pypi, or uv, you can use the built-in CLI command:
 
 ```bash
-# Upgrade to latest version
-tyler db upgrade
+# Initialize the database
+narrator-db init --database-url "postgresql+asyncpg://user:pass@localhost/dbname"
 
-# Check current migration version
-tyler db current
-
-# View migration history
-tyler db history
+# Check database status
+narrator-db status --database-url "postgresql+asyncpg://user:pass@localhost/dbname"
 ```
 
-### Using the Direct Database CLI
-
-Tyler also provides a dedicated database CLI:
+You can also use environment variables instead of passing the database URL:
 
 ```bash
-tyler-db upgrade
+# Set environment variable
+export NARRATOR_DATABASE_URL="postgresql+asyncpg://user:pass@localhost/dbname"
+
+# Then run without --database-url flag
+narrator-db init
+narrator-db status
 ```
 
 ### Using Programmatic API
 
-You can also run migrations from your Python code:
+You can also initialize the database from your Python code:
 
 ```python
 import asyncio
-from alembic import command
-from tyler.database.cli import get_alembic_config
+from narrator import ThreadStore
 
-async def run_migrations():
-    alembic_cfg = get_alembic_config()
-    command.upgrade(alembic_cfg, "head")
+async def init_database():
+    # Initialize database with URL
+    store = await ThreadStore.create("postgresql+asyncpg://user:pass@localhost/dbname")
+    print("Database initialized successfully")
 
-# Run migrations
-asyncio.run(run_migrations())
+# Run initialization
+asyncio.run(init_database())
 ```
 
-## When to Run Migrations
+## When to Initialize Database
 
-You should run migrations:
+You should initialize the database:
 
-1. After updating Tyler to a new version
-2. When instructed to in the release notes
-3. Before using new features that require database schema changes
+1. After installing the-narrator for the first time
+2. When setting up a new environment
+3. Before using database storage features
 
-## Common Migration Commands
+## Common Database Commands
 
 | Command | Description |
 |---------|-------------|
-| `tyler db upgrade` | Update database to latest schema version |
-| `tyler db downgrade` | Downgrade database by one version |
-| `tyler db current` | Show current database version |
-| `tyler db history` | Show migration history |
-| `tyler db migrate` | Generate a new migration based on model changes (developer use) |
+| `narrator-db init` | Initialize database tables |
+| `narrator-db status` | Check database connection and status |
 
 ## Troubleshooting
 
-If you encounter issues running migrations:
+If you encounter issues with database initialization:
 
 1. Check your database connection settings
-2. Ensure you're using the latest version of Tyler
+2. Ensure you're using the latest version of the-narrator
 3. Make sure your database user has sufficient permissions
-4. Check the logs for detailed error messages 
+4. Check the logs for detailed error messages
+5. Verify that your database server is running and accessible 

@@ -251,7 +251,7 @@ WeatherBot: Here are the contents of the current directory: [...]
 
 ### Different Storage Backend
 ```python
-from tyler.database import ThreadStore
+from tyler import ThreadStore
 
 store = ThreadStore(
     db_type="postgresql",

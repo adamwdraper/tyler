@@ -7,13 +7,13 @@ This example demonstrates how to use Tyler's file storage capabilities to save a
 First, set up the file storage configuration:
 
 ```python
-from tyler.storage import get_file_store, FileStore
+from tyler import FileStore
 
 # Get default file store
-file_store = get_file_store()
+file_store = await FileStore.create()
 
 # Or create with custom configuration
-file_store = FileStore(
+file_store = await FileStore.create(
     base_path="/path/to/files",
     max_file_size=100 * 1024 * 1024,  # 100MB
     max_storage_size=10 * 1024 * 1024 * 1024,  # 10GB
@@ -26,7 +26,7 @@ file_store = FileStore(
 ```python
 # Save a file
 file_content = b"Hello, World!"
-result = await file_store.save("example.txt", file_content)
+result = await file_store.save(file_content, "example.txt")
 
 print(f"File ID: {result['id']}")
 print(f"Storage path: {result['storage_path']}")
@@ -66,7 +66,7 @@ attachment = Attachment(
 )
 
 # Process and store the attachment directly
-await attachment.process_and_store()
+await attachment.process_and_store(file_store)
 
 # Check the results
 print(f"File ID: {attachment.file_id}")
@@ -82,7 +82,7 @@ thread = Thread()
 thread.add_message(message)
 
 # Create thread store (will initialize automatically when needed)
-thread_store = ThreadStore()
+thread_store = await ThreadStore.create()
 await thread_store.save(thread)  # Automatically processes and stores attachments
 
 # Access attachment information
@@ -108,11 +108,14 @@ files = [
     (b"File 1 content", "file1.txt", "text/plain"),
     (b"File 2 content", "file2.txt", "text/plain")
 ]
-results = await file_store.batch_save(files)
+results = []
+for content, filename, mime_type in files:
+    result = await file_store.save(content, filename, mime_type)
+    results.append(result)
 
 # Delete multiple files
-file_ids = [result["id"] for result in results]
-await file_store.batch_delete(file_ids)
+for result in results:
+    await file_store.delete(result["id"], result["storage_path"])
 ```
 
 ## Storage Management
@@ -122,23 +125,17 @@ await file_store.batch_delete(file_ids)
 health = await file_store.check_health()
 print(f"Status: {health['status']}")
 print(f"Storage size: {health['storage_size']} bytes")
-print(f"File count: {health['file_count']}")
-print(f"Usage: {health['usage_percent']}%")
 
 # Get storage size
 size = await file_store.get_storage_size()
 print(f"Total storage size: {size} bytes")
-
-# Get file count
-count = await file_store.get_file_count()
-print(f"Total files: {count}")
 ```
 
 ## URL Generation
 
 ```python
 # Generate URL for a file
-from tyler.storage import FileStore
+from tyler import FileStore
 
 storage_path = "ab/cdef1234.pdf"  # Example storage path
 url = FileStore.get_file_url(storage_path)
@@ -148,7 +145,7 @@ print(f"File URL: {url}")
 ## Error Handling
 
 ```python
-from tyler.storage import (
+from narrator.storage.file_store import (
     FileStoreError,
     FileNotFoundError,
     StorageFullError,
@@ -173,11 +170,11 @@ except FileStoreError as e:
 
 ```python
 import asyncio
-from tyler.storage import get_file_store
+from tyler import FileStore
 
 async def main():
     # Initialize file store
-    file_store = get_file_store()
+    file_store = await FileStore.create()
     
     # Save a file
     content = b"Hello, World!"
@@ -196,7 +193,6 @@ async def main():
     # Check storage health
     health = await file_store.check_health()
     print(f"Storage health: {health['status']}")
-    print(f"Storage usage: {health['usage_percent']}%")
 
 if __name__ == "__main__":
     asyncio.run(main())

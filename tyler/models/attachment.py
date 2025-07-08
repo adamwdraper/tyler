@@ -5,7 +5,7 @@ import io
 import magic
 from tyler.utils.logging import get_logger
 from pathlib import Path
-from tyler.storage.file_store import FileStore
+from narrator import FileStore
 
 # Get configured logger
 logger = get_logger(__name__)

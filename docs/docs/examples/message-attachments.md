@@ -368,13 +368,13 @@ TYLER_FILE_STORAGE_PATH=/path/to/files  # for local storage
 
 #### Local Storage (Default)
 ```python
-from tyler.storage import get_file_store
+from narrator import FileStore
 
 # Get the default file store
 store = get_file_store()
 
 # Or configure with custom path
-from tyler.storage import init_file_store
+from narrator import FileStore
 init_file_store('local', base_path='/path/to/files')
 ```
 

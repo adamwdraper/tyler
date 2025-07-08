@@ -12,7 +12,6 @@ def test_top_level_imports():
             Message,
             ThreadStore,
             FileStore,
-            Registry,
             Attachment
         )
         # If imports succeed, the test passes implicitly

@@ -6,8 +6,7 @@ import json
 from tyler.utils.logging import get_logger
 import base64
 # Direct imports
-from tyler.models.attachment import Attachment
-from tyler.storage.file_store import FileStore
+from narrator import Attachment, FileStore
 
 # Get configured logger
 logger = get_logger(__name__)

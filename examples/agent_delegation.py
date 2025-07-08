@@ -7,7 +7,6 @@ a main coordinator agent which can delegate tasks to them.
 import asyncio
 import os
 from tyler import Agent, Thread, Message
-from tyler.utils.agent_runner import agent_runner
 from tyler.utils.logging import get_logger
 import weave
 
@@ -72,8 +71,10 @@ Please help me with these tasks.
         """
     ))
     
-    # Print available agents from agent_runner
-    logger.info(f"Available agents: {agent_runner.list_agents()}")
+    # Print configured child agents
+    child_agent_names = [agent.name for agent in main_agent.agents]
+    logger.info(f"Configured child agents: {child_agent_names}")
+    logger.info(f"Available delegation tools: {len([t for t in main_agent._processed_tools if 'delegate_to_' in t.get('function', {}).get('name', '')])}")
     
     # Process with the main agent
     result_thread, messages = await main_agent.go(thread)

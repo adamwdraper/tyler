@@ -9,21 +9,13 @@ from pydantic import Field, PrivateAttr
 from litellm import acompletion
 
 # Direct imports to avoid circular dependency
-from tyler.models.thread import Thread
-from tyler.models.message import Message
-from tyler.models.attachment import Attachment
-from tyler.database.thread_store import ThreadStore
-from tyler.storage.file_store import FileStore
+from narrator import Thread, Message, Attachment, ThreadStore, FileStore
 
 from tyler.utils.tool_runner import tool_runner
-from tyler.utils.registry import get, register
 from enum import Enum
 from tyler.utils.logging import get_logger
 import asyncio
 from functools import partial
-
-# Import the agent_runner
-from tyler.utils.agent_runner import agent_runner
 
 # Get configured logger
 logger = get_logger(__name__)
@@ -203,18 +195,47 @@ class Agent(Model):
             else:
                 raise ValueError(f"Invalid tool type: {type(tool)}")
         
-        # Register delegation tools for agents
+        # Create delegation tools for agents
         if self.agents:
             for agent in self.agents:
-                # Register agent with agent_runner
-                agent_runner.register_agent(agent.name, agent)
-                
-                # Define delegation handler function
-                async def delegation_handler(task, context=None, agent_name=agent.name, **kwargs):
-                    # Properly await the coroutine
-                    response, metrics = await agent_runner.run_agent(agent_name, task, context)
-                    # We only return the response string, not the metrics
-                    return response
+                # Define delegation handler function that calls the agent directly
+                async def delegation_handler(task, context=None, child_agent=agent, **kwargs):
+                    # Create a new thread for the delegated task
+                    thread = Thread()
+                    
+                    # Add context as a system message if provided
+                    if context:
+                        context_content = "Context information:\n"
+                        for key, value in context.items():
+                            context_content += f"- {key}: {value}\n"
+                        thread.add_message(Message(
+                            role="system",
+                            content=context_content
+                        ))
+                    
+                    # Add the task as a user message
+                    thread.add_message(Message(
+                        role="user",
+                        content=task
+                    ))
+                    
+                    # Execute the child agent directly
+                    logger.info(f"Delegating task to {child_agent.name}: {task}")
+                    try:
+                        result_thread, messages = await child_agent.go(thread)
+                        
+                        # Extract response from assistant messages
+                        response = "\n\n".join([
+                            m.content for m in messages 
+                            if m.role == "assistant" and m.content
+                        ])
+                        
+                        logger.info(f"Agent {child_agent.name} completed delegated task")
+                        return response
+                        
+                    except Exception as e:
+                        logger.error(f"Error in delegated agent {child_agent.name}: {str(e)}")
+                        return f"Error in delegated agent '{child_agent.name}': {str(e)}"
                 
                 # Create a tool definition for this agent
                 tool_def = {
@@ -243,17 +264,14 @@ class Agent(Model):
                 # Add to processed tools so it's available to the LLM
                 self._processed_tools.append(tool_def)
                 
-                # Register the tool implementation
-                # Use an immediately-invoked lambda to preserve the agent_name in the closure
-                handler = lambda name=agent.name: partial(delegation_handler, agent_name=name)
-                
+                # Register the tool implementation with direct closure over the agent instance
                 tool_runner.register_tool(
                     name=f"delegate_to_{agent.name}",
-                    implementation=handler(),
+                    implementation=delegation_handler,
                     definition=tool_def["function"]
                 )
                 
-                logger.info(f"Registered agent tool: delegate_to_{agent.name}")
+                logger.info(f"Registered delegation tool: delegate_to_{agent.name}")
 
         # Create default stores if not provided
         if self.thread_store is None:

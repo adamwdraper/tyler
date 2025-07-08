@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 import os
 import asyncio
 from tyler import Agent, Thread, Message, ThreadStore
-from tyler.storage import get_file_store
+from tyler import FileStore
 import weave
 
 # Load environment variables from .env file
@@ -41,11 +41,10 @@ async def main():
     db_url = f"postgresql+asyncpg://{os.getenv('TYLER_DB_USER')}:{os.getenv('TYLER_DB_PASSWORD')}@{os.getenv('TYLER_DB_HOST')}:{os.getenv('TYLER_DB_PORT')}/{os.getenv('TYLER_DB_NAME')}"
 
     # Initialize ThreadStore with PostgreSQL URL
-    store = ThreadStore(db_url)
-    await store.initialize()  # Required to create tables
+    store = await ThreadStore.create(db_url)
 
     # Initialize file store
-    file_store = get_file_store()
+    file_store = await FileStore.create()
     print(f"Initialized file store at: {file_store.base_path}")
     
     # Create agent with database storage
@@ -89,8 +88,7 @@ if __name__ == "__main__":
 ```python
 db_url = f"postgresql+asyncpg://{os.getenv('TYLER_DB_USER')}:{os.getenv('TYLER_DB_PASSWORD')}@{os.getenv('TYLER_DB_HOST')}:{os.getenv('TYLER_DB_PORT')}/{os.getenv('TYLER_DB_NAME')}"
 
-store = ThreadStore(db_url)
-await store.initialize()
+store = await ThreadStore.create(db_url)
 ```
 - Constructs database URL from environment variables
 - Initializes ThreadStore with PostgreSQL
@@ -98,7 +96,7 @@ await store.initialize()
 
 ### 2. File Storage Setup
 ```python
-file_store = get_file_store()
+file_store = await FileStore.create()
 print(f"Initialized file store at: {file_store.base_path}")
 ```
 - Initializes file storage for attachments
@@ -199,44 +197,30 @@ Tyler includes a built-in Docker Compose configuration to easily set up a Postgr
 
 4. **Initialize the Database**
 
-   After starting the container, initialize the database schema using the Tyler CLI:
+   After starting the container, initialize the database schema using the Narrator CLI:
    ```bash
    # Initialize the database schema
-   tyler-db init
+   narrator-db init --database-url "postgresql+asyncpg://tyler:tyler_dev@localhost:5433/tyler"
    ```
 
-5. **Optional: Run Migrations**
-
-   If you need to update an existing database:
-   ```bash
-   # Apply pending migrations
-   tyler-db upgrade
-   ```
-
-6. **Verify Connection**
+5. **Verify Connection**
 
    You can test your database connection using:
    ```bash
    # Check database status
-   tyler-db current
+   narrator-db status --database-url "postgresql+asyncpg://tyler:tyler_dev@localhost:5433/tyler"
    ```
 
 ### Additional Database Commands
 
-Tyler provides several CLI commands for database management:
+The Narrator provides CLI commands for database management:
 
 ```bash
-# Generate a new migration
-tyler-db migrate
+# Initialize database with specific URL
+narrator-db init --database-url "postgresql+asyncpg://user:pass@localhost:5432/dbname"
 
-# Show migration history
-tyler-db history
-
-# Downgrade database by one version
-tyler-db downgrade
-
-# Initialize with specific options
-tyler-db init --db-type postgresql --db-host localhost --db-port 5433 --db-name tyler --verbose
+# Check database status
+narrator-db status --database-url "postgresql+asyncpg://user:pass@localhost:5432/dbname"
 ```
 
 ### Additional Docker Commands
@@ -331,25 +315,14 @@ Message metrics:
 
 ### SQLite Storage
 ```python
-store = ThreadStore("sqlite:///path/to/database.db")
-```
-
-### Custom Pool Settings
-```python
-store = ThreadStore(
-    url=db_url,
-    pool_size=10,
-    max_overflow=20,
-    pool_timeout=60
-)
+store = await ThreadStore.create("sqlite:///path/to/database.db")
 ```
 
 ### Custom File Storage
 ```python
-from tyler.storage import FileStorage
+from tyler import FileStore
 
-store = FileStorage(
-    storage_type="local",
+store = await FileStore.create(
     base_path="/path/to/files"
 )
 ``` 
